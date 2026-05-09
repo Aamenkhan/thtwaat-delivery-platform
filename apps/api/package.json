@@ -1,0 +1,32 @@
+{
+  "name": "@repo/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "dev": "tsx watch src/server.ts",
+    "worker:dev": "tsx watch src/worker-runner.ts",
+    "start": "node dist/server.js",
+    "lint": "echo 'no lint configured'",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@prisma/client": "^6.1.0",
+    "@repo/types": "workspace:*",
+    "hono": "^4.6.14",
+    "ioredis": "^5.4.2",
+    "socket.io": "^4.8.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "prisma": "^6.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  CREATED
+  PICKED_UP
+  IN_TRANSIT
+  AT_HUB
+  OUT_FOR_DELIVERY
+  DELIVERED
+  RETURN_REQUESTED
+  RETURNED
+  CANCELLED
+}
+
+model Hub {
+  id        String   @id @default(cuid())
+  name      String
+  latitude  Float
+  longitude Float
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  orders    Order[]
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  publicId        String      @unique @default(cuid())
+  status          OrderStatus @default(CREATED)
+  hubId           String?
+  hub             Hub?        @relation(fields: [hubId], references: [id])
+  sellerId        String
+  destinationLat  Float
+  destinationLng  Float
+  qrPayload       String      @unique
+  returnInitiated Boolean     @default(false)
+  photoProofUrls  String[]    @default([])
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  scans           ParcelScan[]
+  assignments     WorkerAssignment[]
+}
+
+model ParcelScan {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  hubId     String?
+  scannedBy String?
+  scanType  String
+  meta      Json?
+  createdAt DateTime @default(now())
+}
+
+model OtpChallenge {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String
+  purpose    String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model Payout {
+  id          String   @id @default(cuid())
+  sellerId    String
+  amountCents Int
+  currency    String   @default("USD")
+  status      String
+  reference   String?
+  createdAt   DateTime @default(now())
+}
+
+model PriceRule {
+  id         String  @id @default(cuid())
+  name       String
+  regionCode String?
+  minLat     Float?
+  maxLat     Float?
+  minLng     Float?
+  maxLng     Float?
+  baseCents  Int
+  perKmCents Int?
+  active     Boolean @default(true)
+}
+
+model WorkerAssignment {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  workerId  String
+  status    String
+  createdAt DateTime @default(now())
+}
+
+model WebhookSubscription {
+  id        String   @id @default(cuid())
+  url       String
+  secret    String
+  events    String[]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  keyHash    String    @unique
+  label      String
+  sellerId   String?
+  hubId      String?
+  scopes     String[]
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model OutboxEvent {
+  id          String    @id @default(cuid())
+  type        String
+  payload     Json
+  deliveredAt DateTime?
+  createdAt   DateTime  @default(now())
+}
