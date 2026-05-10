@@ -37,6 +37,10 @@ registerWhatsAppBridge()
 
 export function createApp() {
   const app = express()
+  // Behind Render / Railway / etc.: clients hit a reverse proxy; rate-limit uses X-Forwarded-For.
+  if (process.env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1)
+  }
   app.use(
     cors({
       origin: resolveCorsOrigin(),
