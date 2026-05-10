@@ -8,6 +8,7 @@ import {
   DeliveryZoneClass,
   Role,
   MembershipRole,
+  WorkerRole,
 } from '@prisma/client'
 
 const prisma = new PrismaClient()
@@ -79,6 +80,94 @@ async function seedDemoAuthFromEnv() {
   })
 
   console.log('DEMO_SEED: created seller user', email)
+}
+
+/**
+ * Optional production field worker (Vercel worker-web + Render API).
+ * Set WORKER_SEED_EMAIL + WORKER_SEED_PASSWORD when running seed against production.
+ * Password is bcrypt-hashed with cost 12 (same as API register).
+ *
+ * Hub: WORKER_SEED_HUB_CODE (default BLR_CC = "Bangalore City Hub" from seed data).
+ */
+async function seedProductionWorkerFromEnv() {
+  const email = process.env.WORKER_SEED_EMAIL?.trim().toLowerCase()
+  const password = process.env.WORKER_SEED_PASSWORD
+  if (!email || !password) return
+
+  const hubCode = process.env.WORKER_SEED_HUB_CODE?.trim() || 'BLR_CC'
+  const displayName =
+    process.env.WORKER_SEED_DISPLAY_NAME?.trim() || 'Bangalore field worker'
+  const phone = process.env.WORKER_SEED_PHONE?.trim() || null
+
+  const hub = await prisma.hub.findFirst({ where: { code: hubCode } })
+  if (!hub) {
+    console.warn(
+      'WORKER_SEED: no hub with code',
+      hubCode,
+      '— run full hub seed first; skipping worker seed'
+    )
+    return
+  }
+
+  const hash = await bcrypt.hash(password, 12)
+
+  const existing = await prisma.user.findFirst({ where: { email } })
+  if (existing) {
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: existing.id },
+        data: { passwordHash: hash, role: Role.WORKER },
+      })
+      const w = await tx.worker.findUnique({ where: { userId: existing.id } })
+      if (w) {
+        await tx.worker.update({
+          where: { id: w.id },
+          data: {
+            displayName,
+            phone: phone ?? undefined,
+            isActive: true,
+            homeHubId: hub.id,
+            role: WorkerRole.COURIER,
+          },
+        })
+      } else {
+        await tx.worker.create({
+          data: {
+            userId: existing.id,
+            displayName,
+            phone,
+            isActive: true,
+            homeHubId: hub.id,
+            role: WorkerRole.COURIER,
+          },
+        })
+      }
+    })
+    console.log('WORKER_SEED: updated', email, '→ hub', hub.code, hub.name)
+    return
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const u = await tx.user.create({
+      data: {
+        email,
+        passwordHash: hash,
+        role: Role.WORKER,
+      },
+    })
+    await tx.worker.create({
+      data: {
+        userId: u.id,
+        displayName,
+        phone,
+        isActive: true,
+        homeHubId: hub.id,
+        role: WorkerRole.COURIER,
+      },
+    })
+  })
+
+  console.log('WORKER_SEED: created', email, '→ hub', hub.code, hub.name)
 }
 
 type HubSeed = {
@@ -601,6 +690,7 @@ async function main() {
   }
 
   await seedDemoAuthFromEnv()
+  await seedProductionWorkerFromEnv()
 
   console.log(
     'Seed OK — hubs:',

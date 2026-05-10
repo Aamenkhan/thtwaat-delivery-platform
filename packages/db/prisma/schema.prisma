@@ -192,6 +192,8 @@ model Seller {
   webhookSubscriptions SellerWebhookSubscription[]
   integrationJobs      IntegrationJob[]
   walletLedgerEntries  WalletLedgerEntry[]
+  razorpayPayments     RazorpayPayment[]
+  subscriptions        SellerSubscription[]
 
   @@index([organizationId])
 }
@@ -273,6 +275,7 @@ model Hub {
   routesFrom           InterHubRoute[]      @relation("RouteOrigin")
   routesTo             InterHubRoute[]      @relation("RouteDest")
   servicePincodes      PincodeDirectory[]   @relation("PincodeServiceHub")
+  workersHome          Worker[]             @relation("WorkerHomeHub")
 }
 
 /// Scheduled lane between two hubs (surface / air trunk).
@@ -360,6 +363,9 @@ model Worker {
   phone       String?
   role        WorkerRole @default(COURIER)
   isActive    Boolean    @default(true)
+  /// Primary / home station (e.g. city delivery center).
+  homeHubId   String?
+  homeHub     Hub?       @relation("WorkerHomeHub", fields: [homeHubId], references: [id], onDelete: SetNull)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -368,6 +374,8 @@ model Worker {
   scanLogs         ScanLog[]
   earnings         WorkerEarning[]
   workerLocations  WorkerLocation[]
+
+  @@index([homeHubId])
 }
 
 /// Live gig-worker GPS trail (Socket.IO + batch writes).
@@ -444,6 +452,9 @@ model Order {
 
   returnInitiated Boolean @default(false)
 
+  /// When seller completed Razorpay checkout for quoted shipment fee (label / logistics).
+  shippingPaidAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -458,6 +469,7 @@ model Order {
   ndrAttempts        NdrAttempt[]
   deliveryExceptions DeliveryException[]
   walletLedgerEntries WalletLedgerEntry[]
+  razorpayPayments   RazorpayPayment[]
 
   @@index([sellerId, status])
   @@index([qrCode])
@@ -796,6 +808,46 @@ model Wallet {
   updatedAt    DateTime @updatedAt
 }
 
+/// SaaS-style plan (BASIC / PRO / …); renewed via Razorpay.
+model SellerSubscription {
+  id               String   @id @default(cuid())
+  sellerId         String
+  seller           Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  planCode         String
+  status           String   @default("ACTIVE")
+  currentPeriodEnd DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  payments         RazorpayPayment[]
+
+  @@index([sellerId, status])
+}
+
+/// Razorpay Order + lifecycle; fulfillment is idempotent (PAID once).
+model RazorpayPayment {
+  id                String                  @id @default(cuid())
+  sellerId          String
+  seller            Seller                  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  purpose           RazorpayPaymentPurpose
+  amountPaise       Int
+  currency          String                  @default("INR")
+  status            RazorpayPaymentStatus   @default(CREATED)
+  razorpayOrderId   String                  @unique
+  receipt           String
+  orderId           String?
+  order             Order?                  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  planCode          String?
+  subscriptionId    String?
+  subscription      SellerSubscription?     @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  razorpayPaymentId String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  paidAt            DateTime?
+
+  @@index([sellerId, createdAt])
+  @@index([orderId])
+}
+
 model TruckBooking {
   id         String   @id @default(cuid())
   sellerId   String
@@ -825,6 +877,19 @@ enum IntegrationJobStatus {
   COMPLETED
   FAILED
   DEAD
+}
+
+enum RazorpayPaymentPurpose {
+  WALLET_RECHARGE
+  COD_SETTLEMENT
+  SUBSCRIPTION
+  SHIPMENT_FEE
+}
+
+enum RazorpayPaymentStatus {
+  CREATED
+  PAID
+  FAILED
 }
 
 /// Programmatic / partner access (rate-limited per key).
