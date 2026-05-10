@@ -1,4 +1,4 @@
-import { Router, type RequestHandler } from 'express'
+import { Router, Request, Response, NextFunction } from "express"
 import { requireApiKey } from '../middleware/api-key.js'
 import { apiKeyRateLimiter } from '../middleware/api-key-rate-limit.js'
 import { validateBody } from '../middleware/validate.js'
@@ -37,7 +37,7 @@ const r = Router()
 r.use(commercialPartnerRouter)
 r.use(apiOrdersRouter)
 
-const postReturns: RequestHandler = async (req, res, next) => {
+const postReturns = async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.apiKeyAuth) throw new HttpError(401, 'Unauthorized')
     const order = await prisma.order.findFirst({
@@ -61,7 +61,7 @@ r.post(
   postReturns
 )
 
-const postWebhooks: RequestHandler = async (req, res, next) => {
+const postWebhooks = async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.apiKeyAuth) throw new HttpError(401, 'Unauthorized')
     const sub = await prisma.sellerWebhookSubscription.create({
@@ -89,7 +89,11 @@ r.post(
   postWebhooks
 )
 
-const postTransportBook: RequestHandler = async (req, res, next) => {
+const postTransportBook = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     if (!req.apiKeyAuth) throw new HttpError(401, 'Unauthorized')
     const booking = await prisma.truckBooking.create({
