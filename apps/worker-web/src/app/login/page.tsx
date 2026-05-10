@@ -1,6 +1,6 @@
 'use client'
 
-import { getApiBaseUrl, loginRequest } from '@repo/web-core/api'
+import { ApiError, getApiBaseUrl, loginRequest } from '@repo/web-core/api'
 import { Button } from '@repo/ui'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -45,8 +45,14 @@ export default function WorkerLoginPage() {
       }
       router.replace('/dashboard')
       router.refresh()
-    } catch {
-      setMessage('Galat credentials.')
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        setMessage('Galat credentials.')
+      } else if (e instanceof ApiError) {
+        setMessage(e.message)
+      } else {
+        setMessage('API connect nahi ho raha — network / CORS check karein.')
+      }
     } finally {
       setLoading(false)
     }

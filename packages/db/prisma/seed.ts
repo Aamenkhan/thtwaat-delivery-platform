@@ -1,12 +1,85 @@
+import { randomBytes } from 'node:crypto'
+import bcrypt from 'bcryptjs'
 import {
   PrismaClient,
   OrderType,
   HubType,
   TransportMode,
   DeliveryZoneClass,
+  Role,
+  MembershipRole,
 } from '@prisma/client'
 
 const prisma = new PrismaClient()
+
+/**
+ * Optional: set DEMO_SEED_EMAIL + DEMO_SEED_PASSWORD when running seed on a
+ * fresh production DB so you can log in (e.g. seller portal on Vercel).
+ * Password is bcrypt-hashed the same way as the API register flow.
+ */
+async function seedDemoAuthFromEnv() {
+  const email = process.env.DEMO_SEED_EMAIL?.trim().toLowerCase()
+  const password = process.env.DEMO_SEED_PASSWORD
+  if (!email || !password) return
+
+  const companyName =
+    process.env.DEMO_SEED_COMPANY?.trim() ||
+    email.split('@')[0] ||
+    'Demo seller'
+  const slugBase =
+    companyName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 40) || 'demo-workspace'
+  const slug = `${slugBase}-${randomBytes(3).toString('hex')}`.slice(0, 64)
+
+  const hash = await bcrypt.hash(password, 12)
+  const existing = await prisma.user.findFirst({ where: { email } })
+  if (existing) {
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: { passwordHash: hash },
+    })
+    console.log('DEMO_SEED: updated password for existing user', email)
+    return
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const u = await tx.user.create({
+      data: {
+        email,
+        passwordHash: hash,
+        role: Role.SELLER,
+      },
+    })
+    const org = await tx.organization.create({
+      data: {
+        name: companyName.slice(0, 120),
+        slug,
+      },
+    })
+    await tx.organizationMember.create({
+      data: {
+        organizationId: org.id,
+        userId: u.id,
+        role: MembershipRole.SELLER,
+      },
+    })
+    const seller = await tx.seller.create({
+      data: {
+        userId: u.id,
+        companyName: companyName.slice(0, 120),
+        organizationId: org.id,
+      },
+    })
+    await tx.wallet.create({
+      data: { sellerId: seller.id, balanceCents: 0, currency: 'INR' },
+    })
+  })
+
+  console.log('DEMO_SEED: created seller user', email)
+}
 
 type HubSeed = {
   code: string
@@ -526,6 +599,8 @@ async function main() {
       })
     }
   }
+
+  await seedDemoAuthFromEnv()
 
   console.log(
     'Seed OK — hubs:',

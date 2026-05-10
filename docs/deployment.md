@@ -60,6 +60,18 @@ Use the **repository root** as the service root so `pnpm` workspaces resolve. Th
 
 Each Next app ships a committed **`.env.production`** pointing at the shared API URL so `next build` embeds `NEXT_PUBLIC_API_URL` without relying on host-specific secrets. Override per environment in the Vercel dashboard if needed.
 
+### First login on production
+
+The seed script only creates hubs and pricing by default; it does **not** create users unless you opt in. If `POST /v1/auth/login` returns **401 Invalid credentials**, the email is missing in the production database or the password does not match.
+
+**Option A — register via API:** call `POST https://<your-api>/v1/auth/register` with a JSON body matching `registerBody` (seller role, email, password, etc.) once, then use the same credentials in the seller app.
+
+**Option B — seed a demo seller (one-off):** with `DATABASE_URL` pointing at production, run:
+
+`DEMO_SEED_EMAIL=you@example.com DEMO_SEED_PASSWORD='…' pnpm --filter @repo/db run seed`
+
+Unset those variables after the first run so the password is not kept in shell history longer than needed. Re-running with the same email only updates the password hash.
+
 ## Database
 
 - Use **managed PostgreSQL**; enable TLS.

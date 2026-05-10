@@ -1,6 +1,6 @@
 'use client'
 
-import { getApiBaseUrl, loginRequest } from '@repo/web-core/api'
+import { ApiError, getApiBaseUrl, loginRequest } from '@repo/web-core/api'
 import { Button } from '@repo/ui'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -45,8 +45,14 @@ export default function AdminLoginPage() {
       }
       router.replace('/dashboard')
       router.refresh()
-    } catch {
-      setMessage('Email ya password galat hai.')
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        setMessage('Email ya password galat hai.')
+      } else if (e instanceof ApiError) {
+        setMessage(e.message)
+      } else {
+        setMessage('API tak nahi pahunch sakay — network / CORS check karein.')
+      }
     } finally {
       setLoading(false)
     }

@@ -12,6 +12,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "devDependencies": {
+    "bcryptjs": "^2.4.3",
     "tsx": "^4.19.2"
   },
   "dependencies": {

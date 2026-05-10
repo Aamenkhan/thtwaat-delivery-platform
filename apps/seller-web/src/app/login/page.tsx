@@ -1,6 +1,6 @@
 'use client'
 
-import { getApiBaseUrl, loginRequest } from '@repo/web-core/api'
+import { ApiError, getApiBaseUrl, loginRequest } from '@repo/web-core/api'
 import { Button } from '@repo/ui'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -45,8 +45,14 @@ export default function LoginPage() {
       }
       router.replace('/dashboard')
       router.refresh()
-    } catch {
-      setMessage('Invalid email or password.')
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        setMessage('Invalid email or password.')
+      } else if (e instanceof ApiError) {
+        setMessage(e.message)
+      } else {
+        setMessage('Could not reach the API. Check your connection and CORS.')
+      }
     } finally {
       setLoading(false)
     }
