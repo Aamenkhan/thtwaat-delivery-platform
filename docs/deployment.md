@@ -20,9 +20,9 @@ This monolith API (`apps/api`) serves REST on HTTP and Socket.IO on the **same**
 | Variable | Example |
 |----------|---------|
 | `NODE_ENV` | `production` |
-| `PORT` | `4000` (Railway sets `PORT` automatically) |
+| `PORT` | Leave unset on **Render** (the platform injects `PORT` automatically). Do not type `3001` unless you know you need it. |
 | `DATABASE_URL` | `postgresql://…` (**required**; add `?sslmode=require` if your provider needs TLS) |
-| `REDIS_URL` | `redis://…` (optional) |
+| `REDIS_URL` | `redis://…` (optional). If you are not using Redis, **delete** this variable — do not set it to `disabled` (older builds treated that as a hostname). |
 | `JWT_SECRET` | Long random string (**required** — without it login/register return 500) |
 | `CORS_ORIGIN` | `https://seller.example.com,https://admin.example.com,https://worker.example.com` |
 | `SOCKET_REQUIRE_AUTH` | `1` to require JWT on Socket.IO handshake |

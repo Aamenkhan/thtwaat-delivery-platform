@@ -19,8 +19,21 @@ function requireEnv(name: string): string {
   return v
 }
 
+function assertPostgresDatabaseUrl() {
+  const u = requireEnv('DATABASE_URL')
+  if (!/^postgres(ql)?:\/\//i.test(u)) {
+    console.error(
+      '[startup] FATAL: DATABASE_URL must be a real PostgreSQL URL starting with postgresql:// or postgres://'
+    )
+    console.error(
+      '[startup] Neon/Postgres: paste the full connection string from your provider (not placeholder text).'
+    )
+    process.exit(1)
+  }
+}
+
 async function start() {
-  requireEnv('DATABASE_URL')
+  assertPostgresDatabaseUrl()
   requireEnv('JWT_SECRET')
 
   try {
