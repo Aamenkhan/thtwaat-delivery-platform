@@ -4,6 +4,7 @@ import { prisma } from '../prisma.js'
 import { sleep } from '../retry.js'
 import * as shopifyJobs from '../../modules/shopify/shopify.jobs.js'
 import * as wooJobs from '../../modules/woocommerce/woocommerce.jobs.js'
+import * as whatsappJobs from '../../modules/whatsapp/whatsapp.jobs.js'
 
 export function backoffMs(attempts: number) {
   return Math.min(60 * 60 * 1000, 1000 * 2 ** Math.min(attempts, 12))
@@ -55,6 +56,9 @@ export async function runOneJob(): Promise<boolean> {
         break
       case 'WOOCOMMERCE_IMPORT_ORDERS':
         await wooJobs.importOrders(job.payload as never)
+        break
+      case 'WHATSAPP_NOTIFY':
+        await whatsappJobs.processWhatsAppNotify(job.payload as never)
         break
       default:
         throw new Error(`Unknown job type: ${job.type}`)

@@ -6,6 +6,7 @@ export async function timelineByPublicId(publicId: string) {
   const order = await prisma.order.findUnique({
     where: { publicId },
     include: {
+      customer: true,
       shipment: true,
       scanLogs: {
         orderBy: { scannedAt: 'asc' },
@@ -54,6 +55,16 @@ export async function timelineByPublicId(publicId: string) {
       qrCode: order.qrCode,
       trackingId: order.shipment?.trackingPublicId ?? null,
       trackingNumber: order.shipment?.trackingNumber ?? null,
+      estimatedDeliveryAt: order.estimatedDeliveryAt?.toISOString() ?? null,
+      parcelType: order.parcelType,
+      codAmountCents: order.codAmountCents,
+      customer: order.customer
+        ? {
+            fullName: order.customer.fullName,
+            phone: order.customer.phone,
+            email: order.customer.email,
+          }
+        : null,
     },
     timeline,
   }

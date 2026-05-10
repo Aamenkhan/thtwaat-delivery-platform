@@ -52,6 +52,8 @@ export async function workerProfileByUserId(userId: string) {
       role: true,
       isActive: true,
       userId: true,
+      homeHubId: true,
+      homeHub: { select: { id: true, name: true, code: true, city: true } },
     },
   })
   if (!w) throw new HttpError(404, 'Worker profile not linked to this account')

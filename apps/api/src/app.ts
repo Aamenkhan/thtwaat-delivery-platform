@@ -22,14 +22,18 @@ import { prisma } from './lib/prisma.js'
 import { domainEvents } from './lib/events.js'
 import { registerOrderWebhookBridge } from './integrations/order-webhook-bridge.js'
 import { registerEcommerceJobBridge } from './integrations/ecommerce-job-bridge.js'
+import { registerWhatsAppBridge } from './integrations/whatsapp-bridge.js'
 import { apiV1Router } from './routes/api-v1.routes.js'
 import { adminLogisticsRouter } from './modules/admin-logistics/admin-logistics.routes.js'
 import { adminShipmentsRouter } from './modules/admin-shipments/admin-shipments.routes.js'
 import { adminOpsRouter } from './modules/admin-ops/admin-ops.routes.js'
+import { paymentsSellerRouter } from './modules/payments/payments.routes.js'
+import { razorpayWebhookRouter } from './modules/payments/razorpay.webhook.js'
 import { pingRedis } from './lib/redis.js'
 
 registerOrderWebhookBridge()
 registerEcommerceJobBridge()
+registerWhatsAppBridge()
 
 export function createApp() {
   const app = express()
@@ -44,6 +48,12 @@ export function createApp() {
     '/v1/integrations/shopify/webhooks',
     express.raw({ type: '*/*', limit: '2mb' }),
     shopifyWebhookRouter
+  )
+
+  app.use(
+    '/v1/integrations/razorpay/webhook',
+    express.raw({ type: 'application/json', limit: '2mb' }),
+    razorpayWebhookRouter
   )
 
   app.use(express.json({ limit: '2mb' }))
@@ -84,6 +94,7 @@ export function createApp() {
   app.use('/v1/public', publicApiRouter)
   app.use('/api/v1', apiV1Router)
   app.use('/v1/seller', sellerRouter)
+  app.use('/v1/seller/payments', paymentsSellerRouter)
   app.use('/v1/integrations/woocommerce', wooCommerceRouter)
   app.use('/v1/integrations/shopify', shopifyOauthRouter)
 

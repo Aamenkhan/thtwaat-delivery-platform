@@ -9,6 +9,7 @@ import {
   type Shipment,
 } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
+import { domainEvents } from '../../lib/events.js'
 import { HttpError } from '../../lib/http-error.js'
 import { allocTrackingNumber } from '../../lib/tracking-number.js'
 import { nearestHub } from '../hub/hub.service.js'
@@ -340,6 +341,11 @@ export async function runBookShipment(
     })
 
     return { order, shipment }
+  })
+
+  domainEvents.emit('order:booked', {
+    orderId: order.id,
+    publicId: order.publicId,
   })
 
   return {

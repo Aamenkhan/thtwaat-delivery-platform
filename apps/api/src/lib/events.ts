@@ -15,6 +15,12 @@ export type OrderTrackingUpdatedPayload = {
   eventKey?: string
 }
 
+/** Shipment successfully booked (order + shipment persisted). */
+export type OrderBookedPayload = {
+  orderId: string
+  publicId: string
+}
+
 /** Internal domain bus for side effects (webhooks, analytics, projections). */
 export const domainEvents = new EventEmitter()
 domainEvents.setMaxListeners(50)

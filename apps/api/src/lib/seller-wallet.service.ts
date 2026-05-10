@@ -1,28 +1,48 @@
-import { PayoutStatus } from '@prisma/client'
+import { OrderStatus, PayoutStatus } from '@prisma/client'
 import { prisma } from './prisma.js'
 import { HttpError } from './http-error.js'
 import { dispatchPlatformWebhook } from './webhooks/platform-dispatch.js'
+import { enqueueWhatsAppNotify } from './whatsapp/whatsapp-notify.service.js'
 
 const COD_CREDIT = 'COD_CREDIT'
 const PAYOUT_DEBIT = 'PAYOUT_DEBIT'
+
+function formatCodInr(paise: number): string {
+  const rupees = paise / 100
+  return `₹${rupees.toLocaleString('en-IN', {
+    minimumFractionDigits: rupees % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+type CodCreditTxResult =
+  | { credited: false }
+  | {
+      credited: true
+      publicId: string
+      sellerId: string
+      orderDbId: string
+      status: OrderStatus
+      codPaise: number
+    }
 
 /**
  * On COD delivery, credit seller wallet once (idempotent per order).
  */
 export async function applyCodWalletCreditOnDelivery(orderId: string) {
-  await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx): Promise<CodCreditTxResult> => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
       include: { seller: { include: { wallet: true } } },
     })
-    if (!order?.seller.wallet) return
+    if (!order?.seller.wallet) return { credited: false }
     const cod = order.codAmountCents ?? 0
-    if (cod <= 0) return
+    if (cod <= 0) return { credited: false }
 
     const existing = await tx.walletLedgerEntry.findFirst({
       where: { orderId, type: COD_CREDIT },
     })
-    if (existing) return
+    if (existing) return { credited: false }
 
     const wallet = order.seller.wallet
     const nextBal = wallet.balanceCents + cod
@@ -43,22 +63,33 @@ export async function applyCodWalletCreditOnDelivery(orderId: string) {
         metadata: { publicId: order.publicId },
       },
     })
-  })
 
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    select: { sellerId: true, publicId: true, id: true, status: true },
-  })
-  if (order) {
-    await dispatchPlatformWebhook({
-      event: 'wallet.credited',
-      orderId: order.id,
+    return {
+      credited: true,
       publicId: order.publicId,
       sellerId: order.sellerId,
+      orderDbId: order.id,
       status: order.status,
-      payload: { reason: 'cod_delivered' },
-    })
-  }
+      codPaise: cod,
+    }
+  })
+
+  if (!result.credited) return
+
+  await dispatchPlatformWebhook({
+    event: 'wallet.credited',
+    orderId: result.orderDbId,
+    publicId: result.publicId,
+    sellerId: result.sellerId,
+    status: result.status,
+    payload: { reason: 'cod_delivered' },
+  })
+
+  void enqueueWhatsAppNotify({
+    templateKey: 'cod_collected',
+    orderPublicId: result.publicId,
+    extras: { codDisplay: formatCodInr(result.codPaise) },
+  }).catch(console.error)
 }
 
 export async function getWalletSnapshot(sellerId: string) {
