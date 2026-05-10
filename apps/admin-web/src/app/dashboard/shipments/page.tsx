@@ -2,9 +2,20 @@
 
 import { Suspense } from 'react'
 import { apiFetch } from '@repo/web-core/api'
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@repo/ui'
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@repo/ui'
 import { formatDate } from '../../../lib/format'
+import {
+  DataTable,
+  FilterBar,
+  FilterInput,
+  FilterSelect,
+  LivePill,
+  SectionHeader,
+  StatusPill,
+  type ColDef,
+} from '../../../components/ui-kit'
 import Link from 'next/link'
+import { ArrowRight, Map, Package, Radio } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
@@ -32,7 +43,15 @@ const STATUSES = [
 
 export default function AdminShipmentsPage() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted-foreground">Loading shipments…</p>}>
+    <Suspense
+      fallback={
+        <div className="space-y-2">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="shimmer h-10 rounded-xl" />
+          ))}
+        </div>
+      }
+    >
       <AdminShipmentsBody />
     </Suspense>
   )
@@ -69,113 +88,137 @@ function AdminShipmentsBody() {
     [router, sp]
   )
 
+  const columns: ColDef<OrderRow>[] = [
+    {
+      key: 'id',
+      header: 'Order ID',
+      render: (o) => (
+        <Link
+          href={`/dashboard/tracking/${encodeURIComponent(o.publicId)}`}
+          className="font-mono text-xs text-primary underline-offset-2 hover:underline"
+        >
+          {o.publicId}
+        </Link>
+      ),
+    },
+    {
+      key: 'tracking',
+      header: 'Tracking',
+      render: (o) => (
+        <span className="font-mono text-xs text-muted-foreground">
+          {o.shipment?.trackingNumber ?? o.shipment?.trackingPublicId ?? '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'seller',
+      header: 'Seller',
+      render: (o) => (
+        <span className="font-medium">{o.seller.companyName ?? o.seller.id.slice(0, 8)}</span>
+      ),
+    },
+    {
+      key: 'route',
+      header: 'Route',
+      render: (o) => (
+        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <span>{o.sourceHub?.code ?? o.sourceHub?.name ?? '—'}</span>
+          <ArrowRight className="size-3 shrink-0" />
+          <span>{o.destinationHub?.code ?? o.destinationHub?.name ?? '—'}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'updated',
+      header: 'Updated',
+      render: (o) => <span className="text-xs text-muted-foreground">{formatDate(o.updatedAt)}</span>,
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (o) => <StatusPill status={o.status} />,
+    },
+  ]
+
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Shipment overview</h1>
-        <p className="text-sm text-muted-foreground">
-          {q.data ? <>{q.data.data.total} orders match filters.</> : null}
-        </p>
+    <div className="flex flex-col gap-8">
+      <SectionHeader
+        label="Logistics"
+        title="Shipment Overview"
+        description={
+          q.data
+            ? `${q.data.data.total.toLocaleString()} orders match current filters`
+            : 'Manage and track all network shipments'
+        }
+        actions={
+          <Button asChild size="sm" variant="outline">
+            <Link href="/dashboard/live">
+              <Radio className="mr-2 size-4" />
+              Live map
+            </Link>
+          </Button>
+        }
+      />
+
+      {/* ── Filters ── */}
+      <FilterBar onClear={() => router.push('/dashboard/shipments')}>
+        <FilterSelect
+          label="Status"
+          value={status}
+          onChange={(v) => setFilter('status', v)}
+          options={[
+            { value: '', label: 'All statuses' },
+            ...STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, ' ') })),
+          ]}
+        />
+        <FilterInput
+          label="Seller ID"
+          value={sellerId}
+          onChange={(v) => setFilter('sellerId', v.trim())}
+          placeholder="cuid…"
+        />
+      </FilterBar>
+
+      {/* ── Status chips (quick filter) ── */}
+      <div className="flex flex-wrap gap-2">
+        {STATUSES.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => setFilter('status', status === s ? '' : s)}
+            className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition-all ${
+              status === s
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+          >
+            {s.replace(/_/g, ' ')}
+          </button>
+        ))}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-          <CardDescription>Query params on `/v1/admin/shipments`</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-3">
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">Status</span>
-            <select
-              className="rounded-md border bg-background px-2 py-1.5 text-sm"
-              value={status}
-              onChange={(e) => setFilter('status', e.target.value)}
-            >
-              <option value="">All</option>
-              {STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s.replace(/_/g, ' ')}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex min-w-[200px] flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">Seller ID</span>
-            <input
-              className="rounded-md border bg-background px-2 py-1.5 text-sm font-mono"
-              placeholder="cuid…"
-              value={sellerId}
-              onChange={(e) => setFilter('sellerId', e.target.value.trim())}
-            />
-          </label>
-          <div className="flex items-end">
-            <Button type="button" variant="outline" size="sm" onClick={() => router.push('/dashboard/shipments')}>
-              Clear
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
+      {/* ── Table ── */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <div>
-            <CardTitle>Shipments</CardTitle>
-            <CardDescription>Hub context + tracking</CardDescription>
-          </div>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="size-4 text-primary" />
+            Shipments
+          </CardTitle>
           <Button asChild size="sm" variant="outline">
-            <Link href="/dashboard/live">Live lookup</Link>
+            <Link href="/dashboard/live">
+              <Map className="mr-2 size-4" />
+              Live lookup
+            </Link>
           </Button>
         </CardHeader>
         <CardContent>
-          {q.isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : q.isError ? (
-            <p className="text-sm text-destructive">Could not load shipments.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left text-sm">
-                <thead>
-                  <tr className="border-b text-xs text-muted-foreground">
-                    <th className="pb-2 pr-2 font-medium">Public ID</th>
-                    <th className="pb-2 pr-2 font-medium">Tracking</th>
-                    <th className="pb-2 pr-2 font-medium">Seller</th>
-                    <th className="pb-2 pr-2 font-medium">Route</th>
-                    <th className="pb-2 pr-2 font-medium">Updated</th>
-                    <th className="pb-2 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {(q.data?.data.orders ?? []).map((o) => (
-                    <tr key={o.publicId}>
-                      <td className="py-2 pr-2 font-mono text-xs">
-                        <Link
-                          href={`/dashboard/tracking/${encodeURIComponent(o.publicId)}`}
-                          className="text-primary underline-offset-2 hover:underline"
-                        >
-                          {o.publicId}
-                        </Link>
-                      </td>
-                      <td className="py-2 pr-2 text-muted-foreground">
-                        {o.shipment?.trackingNumber ?? o.shipment?.trackingPublicId ?? '—'}
-                      </td>
-                      <td className="py-2 pr-2">{o.seller.companyName ?? o.seller.id.slice(0, 8)}</td>
-                      <td className="py-2 pr-2 text-xs text-muted-foreground">
-                        {(o.sourceHub?.code ?? o.sourceHub?.name ?? '—') +
-                          ' → ' +
-                          (o.destinationHub?.code ?? o.destinationHub?.name ?? '—')}
-                      </td>
-                      <td className="py-2 pr-2 text-xs">{formatDate(o.updatedAt)}</td>
-                      <td className="py-2">
-                        <Badge variant="secondary" className="text-[10px] uppercase">
-                          {o.status.replace(/_/g, ' ')}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <DataTable
+            columns={columns}
+            data={q.data?.data.orders ?? []}
+            minWidth="min-w-[900px]"
+            isLoading={q.isLoading}
+            emptyMessage="No shipments match the selected filters."
+          />
         </CardContent>
       </Card>
     </div>

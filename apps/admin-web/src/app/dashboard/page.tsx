@@ -4,10 +4,30 @@ import { DailyOrdersChart, HubVolumeChart, OrdersByStatusChart } from '../../com
 import { formatInrFromMinorUnits } from '../../lib/format'
 import { apiFetch } from '@repo/web-core/api'
 import { createRealtimeSocket, subscribeOrderStatus } from '@repo/web-core/socket'
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader } from '@repo/ui'
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  KpiCard,
+  PageHeader,
+} from '@repo/ui'
+import {
+  Activity,
+  AlertTriangle,
+  BarChart3,
+  CreditCard,
+  Package,
+  TrendingDown,
+  Truck,
+  Users,
+  Zap,
+} from 'lucide-react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 
 type LogisticsSummary = {
@@ -73,7 +93,7 @@ export default function AdminDashboardHome() {
     if (!first) return
     const off = subscribeOrderStatus(socket, first, {
       onStatus: () => {
-        setLive(`Live: ${first} updated`)
+        setLive(`Live update: ${first}`)
         void logistics.refetch()
         void shipments.refetch()
       },
@@ -104,113 +124,198 @@ export default function AdminDashboardHome() {
 
   return (
     <div className="flex flex-col gap-8">
+      {/* ── Header ── */}
       <PageHeader
-        title="Operations dashboard"
-        description="Network logistics, shipments, analytics, and realtime updates (first recent order)."
+        badge="Live"
+        title="Operations Dashboard"
+        description="Network logistics, shipments & realtime analytics."
+        actions={
+          <Button asChild size="sm" variant="outline">
+            <Link href="/dashboard/analytics">
+              <BarChart3 className="mr-2 size-4" />
+              Full analytics
+            </Link>
+          </Button>
+        }
       />
 
+      {/* ── Live update pill ── */}
       {live ? (
-        <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">{live}</p>
+        <div className="flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/8 px-4 py-2.5 text-sm text-primary">
+          <span className="size-2 rounded-full bg-primary animate-pulse-dot" />
+          {live}
+        </div>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          title="Live shipments"
-          value={logistics.data?.data.liveShipmentCount ?? '—'}
-          hint="Not delivered / cancelled"
-        />
-        <StatCard
-          title="COD in pipeline"
-          value={
-            logistics.data ? formatInrFromMinorUnits(logistics.data.data.codPendingPaise) : '—'
-          }
-          hint="Open COD orders"
-        />
-        <StatCard title="Failed (24h)" value={logistics.data?.data.failedDeliveriesLast24h ?? '—'} hint="Cancelled" />
-        <StatCard title="Open NDR" value={s?.openNdrCases ?? '—'} hint="Network-wide" />
+      {/* ── Primary KPIs ── */}
+      <section>
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Network Overview
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="Live Shipments"
+            value={logistics.data?.data.liveShipmentCount ?? '—'}
+            hint="In transit right now"
+            icon={Truck}
+            color="primary"
+          />
+          <KpiCard
+            label="COD in Pipeline"
+            value={logistics.data ? formatInrFromMinorUnits(logistics.data.data.codPendingPaise) : '—'}
+            hint="Open COD orders"
+            icon={CreditCard}
+            color="success"
+          />
+          <KpiCard
+            label="Failed (24h)"
+            value={logistics.data?.data.failedDeliveriesLast24h ?? '—'}
+            hint="Cancelled deliveries"
+            icon={TrendingDown}
+            color="destructive"
+          />
+          <KpiCard
+            label="Open NDR"
+            value={s?.openNdrCases ?? '—'}
+            hint="Network-wide"
+            icon={AlertTriangle}
+            color="warning"
+          />
+        </div>
       </section>
 
+      {/* ── Ops KPIs ── */}
       {s ? (
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <StatCard title="Active (ops)" value={s.activeShipmentsNetworkWide} hint="Cross-check" />
-          <StatCard title="Delivery exceptions" value={s.openDeliveryExceptions} hint="OPEN" />
-          <StatCard title="Pending payouts" value={s.pendingSellerPayouts} hint="Sellers" />
-          <StatCard title="Unsettled worker pay" value={s.unsettledWorkerEarnings} hint="Rows" />
-          <StatCard title="Failed jobs (24h)" value={s.integrationJobsFailedLast24h} hint="Integrations" />
+        <section>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Operations Health
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <KpiCard
+              label="Active (Ops)"
+              value={s.activeShipmentsNetworkWide}
+              hint="Network-wide cross-check"
+              icon={Activity}
+              color="primary"
+            />
+            <KpiCard
+              label="Delivery Exceptions"
+              value={s.openDeliveryExceptions}
+              hint="Open cases"
+              icon={Zap}
+              color="warning"
+            />
+            <KpiCard
+              label="Pending Payouts"
+              value={s.pendingSellerPayouts}
+              hint="Seller settlements"
+              icon={CreditCard}
+              color="success"
+            />
+            <KpiCard
+              label="Unsettled Worker Pay"
+              value={s.unsettledWorkerEarnings}
+              hint="Rows pending"
+              icon={Users}
+              color="primary"
+            />
+            <KpiCard
+              label="Failed Jobs (24h)"
+              value={s.integrationJobsFailedLast24h}
+              hint="Integration failures"
+              icon={AlertTriangle}
+              color="destructive"
+            />
+          </div>
         </section>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Orders by status</CardTitle>
-            <CardDescription>Last 30 days, network-wide</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {analytics.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading chart…</p>
-            ) : (
-              <OrdersByStatusChart data={statusChartData} />
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Orders created per day</CardTitle>
-            <CardDescription>Last 7 days</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {analytics.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading chart…</p>
-            ) : (
-              <DailyOrdersChart data={analytics.data?.data.ordersCreatedByDay ?? []} />
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      {/* ── Charts ── */}
+      <section>
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Analytics
+        </h2>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Orders by Status</CardTitle>
+              <CardDescription>Last 30 days · network-wide</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {analytics.isLoading ? (
+                <div className="shimmer h-[270px] rounded-xl" />
+              ) : (
+                <OrdersByStatusChart data={statusChartData} />
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Orders Created per Day</CardTitle>
+              <CardDescription>Last 7 days</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {analytics.isLoading ? (
+                <div className="shimmer h-[230px] rounded-xl" />
+              ) : (
+                <DailyOrdersChart data={analytics.data?.data.ordersCreatedByDay ?? []} />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </section>
 
+      {/* ── Hub volume ── */}
       <Card>
         <CardHeader>
-          <CardTitle>Destination hub volume</CardTitle>
+          <CardTitle>Destination Hub Volume</CardTitle>
           <CardDescription>Orders grouped by destination hub</CardDescription>
         </CardHeader>
         <CardContent>
           {logistics.isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <div className="shimmer h-[240px] rounded-xl" />
           ) : (
             <HubVolumeChart data={destHubChart} labelKey="Orders" />
           )}
         </CardContent>
       </Card>
 
+      {/* ── Recent shipments table ── */}
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
           <div>
-            <CardTitle>Recent shipments</CardTitle>
+            <CardTitle>Recent Shipments</CardTitle>
             <CardDescription>Latest updates across sellers</CardDescription>
           </div>
           <Button asChild size="sm" variant="outline">
-            <Link href="/dashboard/shipments">View all</Link>
+            <Link href="/dashboard/shipments">
+              <Package className="mr-2 size-4" />
+              View all
+            </Link>
           </Button>
         </CardHeader>
         <CardContent>
           {shipments.isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="shimmer h-10 rounded-lg" />
+              ))}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[520px] text-left text-sm">
                 <thead>
-                  <tr className="border-b text-xs text-muted-foreground">
-                    <th className="pb-2 pr-3 font-medium">Public ID</th>
-                    <th className="pb-2 pr-3 font-medium">Tracking</th>
-                    <th className="pb-2 pr-3 font-medium">Seller</th>
-                    <th className="pb-2 font-medium">Status</th>
+                  <tr className="border-b border-border/60 text-xs text-muted-foreground">
+                    <th className="pb-3 pr-4 font-semibold uppercase tracking-wider">Public ID</th>
+                    <th className="pb-3 pr-4 font-semibold uppercase tracking-wider">Tracking</th>
+                    <th className="pb-3 pr-4 font-semibold uppercase tracking-wider">Seller</th>
+                    <th className="pb-3 font-semibold uppercase tracking-wider">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y">
+                <tbody className="divide-y divide-border/40">
                   {(shipments.data?.data.orders ?? []).map((o) => (
-                    <tr key={o.publicId} className="align-top">
-                      <td className="py-2 pr-3 font-mono text-xs">
+                    <tr key={o.publicId} className="group align-middle transition-colors hover:bg-muted/30">
+                      <td className="py-3 pr-4 font-mono text-xs">
                         <Link
                           className="text-primary underline-offset-2 hover:underline"
                           href={`/dashboard/tracking/${encodeURIComponent(o.publicId)}`}
@@ -218,12 +323,12 @@ export default function AdminDashboardHome() {
                           {o.publicId}
                         </Link>
                       </td>
-                      <td className="py-2 pr-3 text-muted-foreground">
+                      <td className="py-3 pr-4 font-mono text-xs text-muted-foreground">
                         {o.shipment?.trackingNumber ?? o.shipment?.trackingPublicId ?? '—'}
                       </td>
-                      <td className="py-2 pr-3">{o.seller.companyName ?? '—'}</td>
-                      <td className="py-2">
-                        <Badge variant="secondary" className="text-[10px] uppercase">
+                      <td className="py-3 pr-4 text-sm">{o.seller.companyName ?? '—'}</td>
+                      <td className="py-3">
+                        <Badge variant="secondary" className="text-[10px] font-semibold uppercase tracking-wide">
                           {o.status.replace(/_/g, ' ')}
                         </Badge>
                       </td>
@@ -236,19 +341,5 @@ export default function AdminDashboardHome() {
         </CardContent>
       </Card>
     </div>
-  )
-}
-
-function StatCard({ title, value, hint }: { title: string; value: ReactNode; hint: string }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardDescription>{title}</CardDescription>
-        <CardTitle className="text-2xl tabular-nums">{value}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      </CardContent>
-    </Card>
   )
 }

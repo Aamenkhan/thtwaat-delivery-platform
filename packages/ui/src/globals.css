@@ -4,52 +4,67 @@
 
 @layer base {
   :root {
-    --background: 220 20% 98%;
-    --foreground: 222 47% 11%;
+    --background: 224 33% 97%;
+    --foreground: 226 50% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 226 50% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 224 76% 48%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 9% 46%;
-    --accent: 220 14% 94%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 224 76% 48%;
-    --radius: 0.75rem;
-    --glass: 0 0% 100% / 0.72;
-    --glass-border: 220 14% 90% / 0.6;
+    --popover-foreground: 226 50% 10%;
+    --primary: 237 84% 62%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 230 20% 94%;
+    --secondary-foreground: 226 50% 10%;
+    --muted: 228 18% 94%;
+    --muted-foreground: 225 12% 52%;
+    --accent: 260 60% 95%;
+    --accent-foreground: 260 55% 40%;
+    --destructive: 0 74% 54%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 228 20% 89%;
+    --input: 228 20% 89%;
+    --ring: 237 84% 62%;
+    --radius: 0.875rem;
+    --glass: 0 0% 100% / 0.78;
+    --glass-border: 230 20% 88% / 0.7;
+    /* Gradient stops */
+    --grad-from: 237 84% 62%;
+    --grad-to: 268 72% 62%;
+    /* Success / emerald */
+    --success: 152 72% 40%;
+    --success-foreground: 0 0% 100%;
+    /* Warning */
+    --warning: 36 90% 52%;
+    --warning-foreground: 0 0% 100%;
   }
 
   .dark {
-    --background: 224 28% 7%;
-    --foreground: 210 40% 98%;
-    --card: 224 24% 10%;
-    --card-foreground: 210 40% 98%;
-    --popover: 224 24% 10%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 11%;
-    --secondary: 217 19% 16%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 19% 16%;
-    --muted-foreground: 215 16% 65%;
-    --accent: 217 19% 18%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217 19% 18%;
-    --input: 217 19% 18%;
-    --ring: 224 76% 60%;
-    --glass: 224 24% 12% / 0.65;
-    --glass-border: 217 19% 22% / 0.5;
+    --background: 228 32% 6%;
+    --foreground: 220 40% 96%;
+    --card: 228 28% 9%;
+    --card-foreground: 220 40% 96%;
+    --popover: 228 28% 9%;
+    --popover-foreground: 220 40% 96%;
+    --primary: 237 84% 68%;
+    --primary-foreground: 228 32% 6%;
+    --secondary: 228 22% 14%;
+    --secondary-foreground: 220 40% 96%;
+    --muted: 228 22% 14%;
+    --muted-foreground: 225 16% 62%;
+    --accent: 260 35% 18%;
+    --accent-foreground: 260 80% 80%;
+    --destructive: 0 62% 40%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 228 22% 15%;
+    --input: 228 22% 15%;
+    --ring: 237 84% 68%;
+    --glass: 228 28% 11% / 0.72;
+    --glass-border: 228 22% 20% / 0.55;
+    --grad-from: 237 84% 68%;
+    --grad-to: 268 72% 66%;
+    --success: 152 60% 48%;
+    --success-foreground: 0 0% 100%;
+    --warning: 36 90% 55%;
+    --warning-foreground: 228 32% 6%;
   }
 }
 
@@ -67,18 +82,100 @@
 }
 
 @layer utilities {
+  /* ── Glassmorphism ── */
   .glass-panel {
-    @apply border border-white/20 shadow-xl shadow-black/5 backdrop-blur-xl dark:border-white/10 dark:shadow-black/30;
-    background: hsl(var(--card) / 0.85);
+    @apply border shadow-xl backdrop-blur-2xl;
+    border-color: hsl(var(--glass-border));
+    background: hsl(var(--glass));
+    box-shadow:
+      0 8px 32px rgb(0 0 0 / 0.08),
+      inset 0 1px 0 hsl(var(--glass-border));
   }
+
+  /* ── Brand gradient bg ── */
+  .bg-brand-gradient {
+    background: linear-gradient(135deg, hsl(var(--grad-from)) 0%, hsl(var(--grad-to)) 100%);
+  }
+  .bg-brand-gradient-subtle {
+    background: linear-gradient(135deg, hsl(var(--grad-from) / 0.12) 0%, hsl(var(--grad-to) / 0.12) 100%);
+  }
+  .text-brand-gradient {
+    background: linear-gradient(135deg, hsl(var(--grad-from)) 0%, hsl(var(--grad-to)) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ── Glow effects ── */
+  .glow-primary {
+    box-shadow: 0 0 24px hsl(var(--primary) / 0.35), 0 0 48px hsl(var(--primary) / 0.12);
+  }
+  .glow-sm {
+    box-shadow: 0 0 12px hsl(var(--primary) / 0.22);
+  }
+
+  /* ── Premium shadow tiers ── */
   .shadow-premium {
     box-shadow:
       0 1px 2px rgb(15 23 42 / 0.04),
-      0 4px 12px rgb(15 23 42 / 0.06);
+      0 4px 16px rgb(15 23 42 / 0.07),
+      0 0 0 1px hsl(var(--border) / 0.6);
   }
   .dark .shadow-premium {
     box-shadow:
-      0 1px 2px rgb(0 0 0 / 0.35),
-      0 8px 24px rgb(0 0 0 / 0.45);
+      0 1px 3px rgb(0 0 0 / 0.4),
+      0 8px 28px rgb(0 0 0 / 0.5),
+      0 0 0 1px hsl(var(--border) / 0.8);
+  }
+  .shadow-card {
+    box-shadow:
+      0 0 0 1px hsl(var(--border) / 0.5),
+      0 2px 8px rgb(15 23 42 / 0.05);
+  }
+  .dark .shadow-card {
+    box-shadow:
+      0 0 0 1px hsl(var(--border) / 0.8),
+      0 4px 16px rgb(0 0 0 / 0.45);
+  }
+
+  /* ── Sidebar active indicator ── */
+  .nav-active-bar {
+    @apply relative;
+  }
+  .nav-active-bar::before {
+    content: '';
+    @apply absolute inset-y-1 left-0 w-[3px] rounded-r-full bg-brand-gradient opacity-0;
+    transition: opacity 0.2s;
+  }
+  .nav-active-bar.active::before {
+    @apply opacity-100;
+  }
+
+  /* ── Smooth card hover ── */
+  .card-hover {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-1px);
+  }
+
+  /* ── Shimmer skeleton ── */
+  @keyframes shimmer {
+    0% { background-position: -400% 0; }
+    100% { background-position: 400% 0; }
+  }
+  .shimmer {
+    background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--accent)) 50%, hsl(var(--muted)) 75%);
+    background-size: 400% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+
+  /* ── Dot pulse (live indicator) ── */
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.4); }
+  }
+  .animate-pulse-dot {
+    animation: pulse-dot 1.4s ease-in-out infinite;
   }
 }

@@ -1,10 +1,13 @@
 'use client'
 
 import { apiFetch } from '@repo/web-core/api'
-import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@repo/ui'
+import { Card, CardContent, CardHeader, CardTitle, KpiCard } from '@repo/ui'
 import { formatDate, formatInrFromMinorUnits } from '../../../lib/format'
+import { DataTable, EmptyStateBox, SectionHeader, StatusPill, type ColDef } from '../../../components/ui-kit'
 import Link from 'next/link'
+import { Banknote, CreditCard, IndianRupee, TrendingDown } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
 
 type CodRow = {
   publicId: string
@@ -19,70 +22,73 @@ export default function AdminCodReportsPage() {
   const q = useQuery({
     queryKey: ['admin', 'cod-orders'],
     queryFn: () =>
-      apiFetch<{ data: { orders: CodRow[]; total: number } }>(
-        '/v1/admin/logistics/cod-orders?limit=80&offset=0'
-      ),
+      apiFetch<{ data: { orders: CodRow[]; total: number } }>('/v1/admin/logistics/cod-orders?limit=80&offset=0'),
   })
 
-  const totalCod = (q.data?.data.orders ?? []).reduce((s, o) => s + o.codAmountCents, 0)
+  const orders = q.data?.data.orders ?? []
+  const stats = useMemo(() => {
+    const total = orders.reduce((s, o) => s + o.codAmountCents, 0)
+    const pending = orders.filter((o) => !['DELIVERED', 'CANCELLED'].includes(o.status))
+    const pendingAmt = pending.reduce((s, o) => s + o.codAmountCents, 0)
+    const delivered = orders.filter((o) => o.status === 'DELIVERED').length
+    return { total, pending: pending.length, pendingAmt, delivered }
+  }, [orders])
+
+  const columns: ColDef<CodRow>[] = [
+    {
+      key: 'order',
+      header: 'Order',
+      render: (o) => (
+        <Link className="font-mono text-xs text-primary hover:underline underline-offset-2" href={`/dashboard/tracking/${encodeURIComponent(o.publicId)}`}>
+          {o.publicId}
+        </Link>
+      ),
+    },
+    { key: 'seller', header: 'Seller', render: (o) => <span className="font-medium">{o.seller.companyName ?? '—'}</span> },
+    {
+      key: 'amount',
+      header: 'COD Amount',
+      render: (o) => <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatInrFromMinorUnits(o.codAmountCents)}</span>,
+    },
+    { key: 'updated', header: 'Updated', render: (o) => <span className="text-xs text-muted-foreground">{formatDate(o.updatedAt)}</span> },
+    { key: 'status', header: 'Status', render: (o) => <StatusPill status={o.status} /> },
+  ]
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">COD reports</h1>
-        <p className="text-sm text-muted-foreground">
-          Orders with COD &gt; 0 ({q.data?.data.total ?? '—'} rows). Sample total on page:{' '}
-          <span className="font-medium tabular-nums">{formatInrFromMinorUnits(totalCod)}</span>
-        </p>
+    <div className="flex flex-col gap-8">
+      <SectionHeader label="Finance" title="COD Reports" description={`Cash-on-delivery pipeline — ${q.data?.data.total ?? '—'} orders`} />
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Total COD" value={formatInrFromMinorUnits(stats.total)} hint="Sample (80 records)" icon={IndianRupee} color="primary" />
+        <KpiCard label="Pending" value={formatInrFromMinorUnits(stats.pendingAmt)} hint={`${stats.pending} orders in flight`} icon={CreditCard} color="warning" />
+        <KpiCard label="Pending Orders" value={stats.pending} hint="Not yet delivered" icon={TrendingDown} color="warning" />
+        <KpiCard label="Delivered" value={stats.delivered} hint="COD collected" icon={Banknote} color="success" />
       </div>
+
       <Card>
-        <CardHeader>
-          <CardTitle>COD pipeline</CardTitle>
-          <CardDescription>Outstanding collection exposure by order</CardDescription>
-        </CardHeader>
+        <CardHeader><CardTitle>Collection Pipeline</CardTitle></CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Pending vs. Delivered</span>
+            <span className="font-semibold">{orders.length > 0 ? Math.round((stats.delivered / orders.length) * 100) : 0}% collected</span>
+          </div>
+          <div className="relative h-3 overflow-hidden rounded-full bg-muted">
+            <div className="absolute inset-y-0 left-0 rounded-full bg-brand-gradient transition-all duration-700" style={{ width: `${orders.length > 0 ? (stats.delivered / orders.length) * 100 : 0}%` }} />
+          </div>
+          <div className="flex gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-primary" /> Delivered: {stats.delivered}</span>
+            <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-amber-500" /> Pending: {stats.pending}</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Banknote className="size-4 text-primary" />COD Pipeline</CardTitle></CardHeader>
         <CardContent>
-          {q.isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : q.isError ? (
-            <p className="text-sm text-destructive">Could not load COD orders.</p>
+          {q.isError ? (
+            <EmptyStateBox icon={<Banknote className="size-8 text-red-400/50" />} title="Failed to load COD orders" description="Check API connectivity." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-left text-sm">
-                <thead>
-                  <tr className="border-b text-xs text-muted-foreground">
-                    <th className="pb-2 pr-2 font-medium">Order</th>
-                    <th className="pb-2 pr-2 font-medium">Seller</th>
-                    <th className="pb-2 pr-2 font-medium">COD</th>
-                    <th className="pb-2 pr-2 font-medium">Updated</th>
-                    <th className="pb-2 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {(q.data?.data.orders ?? []).map((o) => (
-                    <tr key={o.publicId}>
-                      <td className="py-2 pr-2 font-mono text-xs">
-                        <Link
-                          className="text-primary underline-offset-2 hover:underline"
-                          href={`/dashboard/tracking/${encodeURIComponent(o.publicId)}`}
-                        >
-                          {o.publicId}
-                        </Link>
-                      </td>
-                      <td className="py-2 pr-2">{o.seller.companyName ?? '—'}</td>
-                      <td className="py-2 pr-2 tabular-nums font-medium">
-                        {formatInrFromMinorUnits(o.codAmountCents)}
-                      </td>
-                      <td className="py-2 pr-2 text-xs text-muted-foreground">{formatDate(o.updatedAt)}</td>
-                      <td className="py-2">
-                        <Badge variant="secondary" className="text-[10px] uppercase">
-                          {o.status.replace(/_/g, ' ')}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable columns={columns} data={orders} minWidth="min-w-[700px]" isLoading={q.isLoading} emptyMessage="No COD orders found." />
           )}
         </CardContent>
       </Card>
