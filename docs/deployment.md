@@ -21,9 +21,9 @@ This monolith API (`apps/api`) serves REST on HTTP and Socket.IO on the **same**
 |----------|---------|
 | `NODE_ENV` | `production` |
 | `PORT` | `4000` (Railway sets `PORT` automatically) |
-| `DATABASE_URL` | `postgresql://…` |
+| `DATABASE_URL` | `postgresql://…` (**required**; add `?sslmode=require` if your provider needs TLS) |
 | `REDIS_URL` | `redis://…` (optional) |
-| `JWT_SECRET` | Long random string |
+| `JWT_SECRET` | Long random string (**required** — without it login/register return 500) |
 | `CORS_ORIGIN` | `https://seller.example.com,https://admin.example.com,https://worker.example.com` |
 | `SOCKET_REQUIRE_AUTH` | `1` to require JWT on Socket.IO handshake |
 | `OTP_PEPPER` | Strong secret for OTP hashing |
@@ -56,7 +56,9 @@ Use the **repository root** as the service root so `pnpm` workspaces resolve. Th
 2. **Start**: `pnpm --filter @repo/api start` (or `node apps/api/dist/server.js` from repo root).
 3. Set **`CORS_ORIGIN`** on the API to a comma-separated list of your deployed Next.js origins (scheme + host, no path), e.g. `https://seller.vercel.app,https://admin.vercel.app,https://worker.vercel.app`. If you omit it, Express and Socket.IO reflect the browser `Origin` header, which often works but is looser than an explicit allowlist.
 4. Attach **PostgreSQL** plugin and copy connection string into `DATABASE_URL`.
-5. Run migrations: `pnpm db:migrate` or `prisma migrate deploy` in CI against production.
+5. Run migrations once against production: from a shell with `DATABASE_URL` set,  
+   `pnpm exec prisma migrate deploy --schema packages/db/prisma/schema.prisma`  
+   (or add a Render **Shell** / release command). Without migrated tables, auth routes can fail with **500 / Internal server error**.
 
 Each Next app ships a committed **`.env.production`** pointing at the shared API URL so `next build` embeds `NEXT_PUBLIC_API_URL` without relying on host-specific secrets. Override per environment in the Vercel dashboard if needed.
 
