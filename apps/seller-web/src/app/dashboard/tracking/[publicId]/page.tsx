@@ -2,7 +2,24 @@
 
 import { apiFetch } from '@repo/web-core/api'
 import { createRealtimeSocket, subscribeOrderStatus } from '@repo/web-core/socket'
-import { Button } from '@repo/ui'
+import { RazorpayCheckoutTrigger } from '../../../../components/razorpay-checkout-trigger'
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  FadeIn,
+  PageHeader,
+  Separator,
+  Skeleton,
+  StatusBadge,
+  TrackingTimeline,
+  orderStatusTone,
+  type TrackingTimelineItem,
+} from '@repo/ui'
+import { Mail, MapPin, Phone, QrCode, Route, User } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -43,95 +60,24 @@ type TrackingResponse = {
     qrCode: string
     trackingId: string | null
     trackingNumber: string | null
+    estimatedDeliveryAt: string | null
+    parcelType: string | null
+    codAmountCents: number | null
+    customer: { fullName: string; phone: string; email: string | null } | null
   }
   timeline: TimelineItem[]
 }
 
-type Phase = 'booking' | 'pickup' | 'transit' | 'out' | 'delivered' | 'return' | 'other'
-
-function scanEventPhase(event: string): Phase {
-  switch (event) {
-    case 'BOOKING_RECEIVED':
-      return 'booking'
-    case 'PICKUP_SCAN':
-    case 'SELLER_CONFIRM':
-      return 'pickup'
-    case 'HUB_DROP_SCAN':
-    case 'HUB_ACCEPT':
-    case 'RETURN_SCAN':
-    case 'RETURN_HUB_ACCEPT':
-      return 'transit'
-    case 'DELIVERY_SCAN':
-    case 'OTP_VERIFY':
-      return 'out'
-    case 'DELIVERED':
-      return 'delivered'
-    case 'RETURN_INIT':
-      return 'return'
-    default:
-      return 'other'
-  }
-}
-
-function phaseLabel(phase: Phase): string {
-  switch (phase) {
-    case 'booking':
-      return 'Booking received'
-    case 'pickup':
-      return 'Picked up'
-    case 'transit':
-      return 'In transit'
-    case 'out':
-      return 'Out for delivery'
-    case 'delivered':
-      return 'Delivered'
-    case 'return':
-      return 'Return'
-    default:
-      return 'Update'
-  }
-}
-
-function phaseBadgeClass(phase: Phase): string {
-  switch (phase) {
-    case 'booking':
-      return 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200'
-    case 'pickup':
-      return 'bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-100'
-    case 'transit':
-      return 'bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-100'
-    case 'out':
-      return 'bg-amber-100 text-amber-950 dark:bg-amber-950 dark:text-amber-100'
-    case 'delivered':
-      return 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100'
-    case 'return':
-      return 'bg-orange-100 text-orange-950 dark:bg-orange-950 dark:text-orange-100'
-    default:
-      return 'bg-muted text-muted-foreground'
-  }
-}
-
-function orderStatusBadgeClass(status: string): string {
-  const s = status.toUpperCase()
-  if (s.includes('DELIVERED')) return 'bg-emerald-600 text-white'
-  if (s.includes('OUT_FOR') || s.includes('DELIVERY')) return 'bg-amber-500 text-white'
-  if (s.includes('TRANSIT') || s.includes('HUB')) return 'bg-violet-600 text-white'
-  if (s.includes('PICKED') || s.includes('PICKUP')) return 'bg-sky-600 text-white'
-  if (s.includes('CANCEL')) return 'bg-red-600 text-white'
-  return 'bg-slate-600 text-white'
-}
-
-function formatScanTitle(event: string): string {
+function formatScanTitle(event: string) {
   return event
     .split('_')
     .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
     .join(' ')
 }
 
-function formatWhen(iso: string): string {
+function formatWhen(iso: string) {
   try {
-    const d = new Date(iso)
-    return d.toLocaleString(undefined, {
+    return new Date(iso).toLocaleString(undefined, {
       dateStyle: 'medium',
       timeStyle: 'short',
     })
@@ -148,12 +94,7 @@ function isPlatformItem(item: TimelineItem): item is PlatformTimelineItem {
   return item.kind === 'platform'
 }
 
-function extractParcelSummary(timeline: TimelineItem[]): {
-  parcelType?: string
-  codCents?: number
-  channel?: string
-  pricingInr?: number
-} {
+function extractParcelSummary(timeline: TimelineItem[]) {
   const out: {
     parcelType?: string
     codCents?: number
@@ -168,10 +109,8 @@ function extractParcelSummary(timeline: TimelineItem[]): {
       if (typeof m.channel === 'string') out.channel = m.channel
     }
     if (isPlatformItem(row) && row.source === 'pricing' && row.payload && typeof row.payload === 'object') {
-      const p = row.payload as { amountCents?: number; currency?: string }
-      if (typeof p.amountCents === 'number') {
-        out.pricingInr = p.amountCents / 100
-      }
+      const p = row.payload as { amountCents?: number }
+      if (typeof p.amountCents === 'number') out.pricingInr = p.amountCents / 100
     }
   }
   return out
@@ -187,11 +126,60 @@ function lastScanCoords(timeline: TimelineItem[]): { lat: number; lng: number } 
   return null
 }
 
+function buildTimelineItems(timeline: TimelineItem[]): TrackingTimelineItem[] {
+  return timeline.map((item) => {
+    if (isScanItem(item)) {
+      return {
+        id: item.id,
+        title: formatScanTitle(item.event),
+        subtitle: [item.hubName, item.workerName].filter(Boolean).join(' · ') || undefined,
+        timestamp: formatWhen(item.scannedAt),
+        statusKey: item.event,
+        meta: item.photoUrl ? (
+          <a href={item.photoUrl} target="_blank" rel="noreferrer" className="text-primary underline">
+            Proof photo
+          </a>
+        ) : undefined,
+      }
+    }
+    const payload = item.payload
+    const pricing =
+      item.source === 'pricing' &&
+      payload &&
+      typeof payload === 'object' &&
+      'amountCents' in payload &&
+      typeof (payload as { amountCents: unknown }).amountCents === 'number'
+        ? (payload as { amountCents: number; currency?: string })
+        : null
+    return {
+      id: item.id,
+      title: item.eventKey.replace(/[._]/g, ' '),
+      subtitle: item.source,
+      timestamp: formatWhen(item.scannedAt),
+      statusKey: item.eventKey,
+      meta: pricing ? (
+        <span className="text-muted-foreground">
+          Quoted{' '}
+          <span className="font-semibold text-foreground">
+            {pricing.currency === 'INR' || !pricing.currency ? '₹' : `${pricing.currency} `}
+            {(pricing.amountCents / 100).toFixed(2)}
+          </span>
+        </span>
+      ) : payload != null && typeof payload === 'object' ? (
+        <pre className="max-h-24 overflow-auto rounded-md bg-muted/50 p-2 text-[10px] leading-relaxed">
+          {JSON.stringify(payload, null, 2)}
+        </pre>
+      ) : null,
+    }
+  })
+}
+
 export default function TrackingPage() {
   const params = useParams()
   const publicId = params.publicId as string
   const qc = useQueryClient()
   const [live, setLive] = useState<string | null>(null)
+  const [payMsg, setPayMsg] = useState<string | null>(null)
 
   const q = useQuery({
     queryKey: ['tracking', publicId],
@@ -199,10 +187,24 @@ export default function TrackingPage() {
     enabled: Boolean(publicId),
   })
 
+  const shipQ = useQuery({
+    queryKey: ['seller-shipment', publicId],
+    queryFn: () =>
+      apiFetch<{
+        data: {
+          order: { publicId: string; shippingPaidAt: string | null }
+        }
+      }>(`/v1/seller/shipments/${encodeURIComponent(publicId)}`),
+    enabled: Boolean(publicId),
+  })
+
   const data = q.data?.data
   const timeline = data?.timeline ?? []
   const parcel = useMemo(() => extractParcelSummary(timeline), [timeline])
   const mapCoords = useMemo(() => lastScanCoords(timeline), [timeline])
+  const feePaise = parcel.pricingInr != null ? Math.max(0, Math.round(parcel.pricingInr * 100)) : 0
+  const shippingPaidAt = shipQ.data?.data?.order?.shippingPaidAt ?? null
+  const timelineItems = useMemo(() => buildTimelineItems(timeline), [timeline])
 
   const socket = useMemo(() => createRealtimeSocket(), [])
 
@@ -224,260 +226,213 @@ export default function TrackingPage() {
     }
   }, [publicId, qc, socket])
 
+  const etaFormatted = data?.order.estimatedDeliveryAt
+    ? formatWhen(data.order.estimatedDeliveryAt)
+    : null
+  const etaCopy = etaFormatted
+    ? `Target window ${etaFormatted} — confirm with hub for live ETA.`
+    : 'ETA updates when hubs publish revised windows.'
+
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-8 pb-10">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Shipment tracking</h1>
-          <p className="mt-1 font-mono text-xs text-muted-foreground break-all">{publicId}</p>
-        </div>
-        <Button variant="outline" size="sm" asChild>
-          <Link href="/dashboard/shipments">Back</Link>
-        </Button>
-      </div>
+    <div className="mx-auto flex max-w-4xl flex-col gap-8 pb-24">
+      <FadeIn>
+        <PageHeader
+          title="Shipment journey"
+          description="Unified scan trail, pricing signals, and proof — optimized for mobile field teams and seller ops."
+          actions={
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/dashboard/shipments">Back to list</Link>
+            </Button>
+          }
+        />
+        <p className="-mt-4 font-mono text-xs text-muted-foreground break-all">{publicId}</p>
+      </FadeIn>
 
       {live ? (
-        <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">{live}</p>
+        <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 text-sm text-primary">{live}</div>
       ) : null}
 
       {q.isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading timeline…</p>
+        <div className="space-y-4">
+          <Skeleton className="h-40 rounded-2xl" />
+          <Skeleton className="h-64 rounded-2xl" />
+        </div>
       ) : q.isError ? (
-        <p className="text-sm text-destructive">Could not load tracking.</p>
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle>Unable to load tracking</CardTitle>
+            <CardDescription>Network, auth, or shipment ID may be invalid.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" type="button" onClick={() => void q.refetch()}>
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
       ) : data ? (
         <>
-          <OrderSummaryCard order={data.order} />
-          <ParcelAndMapSection parcel={parcel} coords={mapCoords} />
-          <TimelineSection timeline={timeline} />
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card variant="elevated" className="lg:col-span-2">
+              <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
+                <div>
+                  <CardTitle className="text-base">Current status</CardTitle>
+                  <CardDescription>{data.order.lifecycle.replace(/_/g, ' ')}</CardDescription>
+                </div>
+                <StatusBadge tone={orderStatusTone(data.order.status)}>{data.order.status.replace(/_/g, ' ')}</StatusBadge>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-xl border bg-muted/20 p-4">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <QrCode className="size-4" />
+                    QR payload
+                  </div>
+                  <p className="mt-2 font-mono text-xs break-all leading-relaxed">{data.order.qrCode}</p>
+                </div>
+                <div className="rounded-xl border bg-muted/20 p-4">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <Route className="size-4" />
+                    Tracking refs
+                  </div>
+                  <p className="mt-2 font-mono text-xs break-all">{data.order.trackingId ?? '—'}</p>
+                  <p className="mt-1 font-mono text-xs">{data.order.trackingNumber ?? ''}</p>
+                </div>
+                <div className="sm:col-span-2 rounded-xl border border-dashed bg-background/60 p-4 text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Delivery ETA · </span>
+                  {etaCopy}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card variant="glass">
+              <CardHeader>
+                <CardTitle className="text-base">Parcel</CardTitle>
+                <CardDescription>From booking metadata & pricing events</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Type</span>
+                  <span className="font-medium">{data.order.parcelType ?? parcel.parcelType ?? '—'}</span>
+                </div>
+                <Separator />
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">COD</span>
+                  <span className="font-medium">
+                    {data.order.codAmountCents != null
+                      ? `₹${(data.order.codAmountCents / 100).toFixed(2)}`
+                      : parcel.codCents != null
+                        ? `₹${(parcel.codCents / 100).toFixed(2)}`
+                        : '—'}
+                  </span>
+                </div>
+                <Separator />
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Quoted fare</span>
+                  <span className="font-medium">
+                    {parcel.pricingInr != null ? `₹${parcel.pricingInr.toFixed(2)}` : '—'}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {data.order.customer ? (
+            <Card variant="elevated">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <User className="size-4" />
+                  Consignee
+                </CardTitle>
+                <CardDescription>Delivery contact on file</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border bg-muted/15 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Name</p>
+                  <p className="mt-1 font-medium">{data.order.customer.fullName}</p>
+                </div>
+                <div className="rounded-xl border bg-muted/15 p-4">
+                  <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <Phone className="size-3.5" />
+                    Phone
+                  </p>
+                  <p className="mt-1 font-mono text-sm">{data.order.customer.phone}</p>
+                </div>
+                {data.order.customer.email ? (
+                  <div className="sm:col-span-2 rounded-xl border bg-muted/15 p-4">
+                    <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      <Mail className="size-3.5" />
+                      Email
+                    </p>
+                    <p className="mt-1 text-sm">{data.order.customer.email}</p>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {shippingPaidAt ? (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
+              Shipment fee paid · {new Date(shippingPaidAt).toLocaleString()}
+            </div>
+          ) : feePaise >= 100 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Shipment payment</CardTitle>
+                <CardDescription>Quoted logistics fee ₹{(feePaise / 100).toFixed(2)}</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap items-center gap-3">
+                <RazorpayCheckoutTrigger
+                  label="Pay with Razorpay"
+                  createBody={{
+                    purpose: 'SHIPMENT_FEE',
+                    orderPublicId: publicId,
+                    amountPaise: feePaise,
+                  }}
+                  onSettled={(outcome, detail) => {
+                    if (outcome === 'success') {
+                      setPayMsg('Payment recorded.')
+                      void qc.invalidateQueries({ queryKey: ['seller-shipment', publicId] })
+                    } else if (outcome === 'failed') {
+                      setPayMsg(detail ?? 'Payment failed.')
+                    } else {
+                      setPayMsg('Checkout dismissed.')
+                    }
+                  }}
+                />
+                {payMsg ? <span className="text-xs text-muted-foreground">{payMsg}</span> : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <Card variant="elevated">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <MapPin className="size-4" />
+                Route preview
+              </CardTitle>
+              <CardDescription>Drop-in Mapbox / Google Maps using last scan coordinates</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex aspect-[21/9] w-full items-center justify-center rounded-2xl border-2 border-dashed border-muted-foreground/25 bg-gradient-to-br from-muted/40 to-muted/10">
+                {mapCoords ? (
+                  <div className="text-center">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Last fix</p>
+                    <p className="mt-2 font-mono text-sm">
+                      {mapCoords.lat.toFixed(5)}, {mapCoords.lng.toFixed(5)}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Awaiting first GPS scan</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <section>
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Journey timeline</h2>
+            <TrackingTimeline items={timelineItems} />
+          </section>
         </>
       ) : null}
     </div>
-  )
-}
-
-function OrderSummaryCard({ order }: { order: TrackingResponse['order'] }) {
-  return (
-    <section className="rounded-2xl border bg-card p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Current status</h2>
-        <span
-          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${orderStatusBadgeClass(order.status)}`}
-        >
-          {order.status.replace(/_/g, ' ')}
-        </span>
-      </div>
-      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="text-muted-foreground">Lifecycle</dt>
-          <dd className="font-medium">{order.lifecycle.replace(/_/g, ' ')}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">QR code</dt>
-          <dd className="font-mono text-xs break-all">{order.qrCode}</dd>
-        </div>
-        {order.trackingId ? (
-          <div>
-            <dt className="text-muted-foreground">Tracking ID</dt>
-            <dd className="font-mono text-xs break-all">{order.trackingId}</dd>
-          </div>
-        ) : null}
-        {order.trackingNumber ? (
-          <div>
-            <dt className="text-muted-foreground">Tracking #</dt>
-            <dd className="font-mono text-xs">{order.trackingNumber}</dd>
-          </div>
-        ) : null}
-      </dl>
-    </section>
-  )
-}
-
-function ParcelAndMapSection({
-  parcel,
-  coords,
-}: {
-  parcel: ReturnType<typeof extractParcelSummary>
-  coords: { lat: number; lng: number } | null
-}) {
-  const hasParcel =
-    parcel.parcelType != null ||
-    parcel.codCents != null ||
-    parcel.channel != null ||
-    parcel.pricingInr != null
-
-  return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <section className="rounded-2xl border bg-card p-5 shadow-sm">
-        <h2 className="text-sm font-semibold">Parcel details</h2>
-        {!hasParcel ? (
-          <p className="mt-3 text-sm text-muted-foreground">No parcel metadata on this timeline yet.</p>
-        ) : (
-          <dl className="mt-4 grid gap-3 text-sm">
-            {parcel.parcelType ? (
-              <div>
-                <dt className="text-muted-foreground">Type</dt>
-                <dd className="font-medium">{parcel.parcelType}</dd>
-              </div>
-            ) : null}
-            {parcel.codCents != null ? (
-              <div>
-                <dt className="text-muted-foreground">COD</dt>
-                <dd className="font-medium">
-                  ₹{(parcel.codCents / 100).toFixed(2)} <span className="text-muted-foreground">INR</span>
-                </dd>
-              </div>
-            ) : null}
-            {parcel.pricingInr != null ? (
-              <div>
-                <dt className="text-muted-foreground">Quoted fare (from timeline)</dt>
-                <dd className="font-medium">₹{parcel.pricingInr.toFixed(2)}</dd>
-              </div>
-            ) : null}
-            {parcel.channel ? (
-              <div className="sm:col-span-2">
-                <dt className="text-muted-foreground">Channel</dt>
-                <dd className="font-mono text-xs break-all text-muted-foreground">{parcel.channel}</dd>
-              </div>
-            ) : null}
-          </dl>
-        )}
-      </section>
-
-      <section className="rounded-2xl border bg-card p-5 shadow-sm">
-        <h2 className="text-sm font-semibold">Route map</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Map preview placeholder — plug in Mapbox / Google Maps with the coordinates below.
-        </p>
-        <div className="mt-4 flex aspect-[4/3] w-full items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/25 bg-muted/30">
-          {coords ? (
-            <div className="px-4 text-center">
-              <p className="text-xs font-medium text-muted-foreground">Last scan location</p>
-              <p className="mt-2 font-mono text-sm">
-                {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No coordinates yet</p>
-          )}
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function TimelineSection({ timeline }: { timeline: TimelineItem[] }) {
-  if (timeline.length === 0) {
-    return (
-      <section className="rounded-2xl border border-dashed bg-muted/20 p-8 text-center text-sm text-muted-foreground">
-        No tracking events yet.
-      </section>
-    )
-  }
-
-  return (
-    <section>
-      <h2 className="mb-4 text-sm font-semibold">Timeline</h2>
-      <ul className="space-y-0">
-        {timeline.map((item, index) => {
-          const isLast = index === timeline.length - 1
-          return (
-            <li key={item.id} className="relative flex gap-4 pb-10 last:pb-0">
-              <div className="relative flex w-11 shrink-0 flex-col items-center pt-1">
-                {!isLast ? (
-                  <span
-                    className="absolute left-1/2 top-3 z-0 h-full w-px -translate-x-1/2 bg-border"
-                    aria-hidden
-                  />
-                ) : null}
-                <span className="relative z-10 flex h-3.5 w-3.5 shrink-0 rounded-full border-2 border-background bg-primary shadow-sm" />
-              </div>
-              <div className="min-w-0 flex-1 pt-0">
-                {isScanItem(item) ? (
-                  <ScanTimelineCard item={item} isLatest={isLast} />
-                ) : (
-                  <PlatformTimelineCard item={item} />
-                )}
-              </div>
-            </li>
-          )
-        })}
-      </ul>
-    </section>
-  )
-}
-
-function ScanTimelineCard({ item, isLatest }: { item: ScanTimelineItem; isLatest: boolean }) {
-  const phase = scanEventPhase(item.event)
-  const phaseLbl = phaseLabel(phase)
-  return (
-    <article
-      className={`rounded-2xl border bg-card p-4 shadow-sm transition-shadow sm:p-5 ${isLatest ? 'ring-1 ring-primary/20' : ''}`}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{phaseLbl}</p>
-          <h3 className="mt-0.5 text-base font-semibold">{formatScanTitle(item.event)}</h3>
-        </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${phaseBadgeClass(phase)}`}>
-          {item.event.replace(/_/g, ' ')}
-        </span>
-      </div>
-      <p className="mt-2 text-xs text-muted-foreground">{formatWhen(item.scannedAt)}</p>
-      <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="text-xs text-muted-foreground">Hub</dt>
-          <dd className="font-medium">{item.hubName ?? '—'}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">Worker</dt>
-          <dd className="font-medium">{item.workerName}</dd>
-        </div>
-      </dl>
-      {item.photoUrl ? (
-        <a
-          href={item.photoUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-3 inline-block text-xs text-primary underline"
-        >
-          View proof photo
-        </a>
-      ) : null}
-    </article>
-  )
-}
-
-function PlatformTimelineCard({ item }: { item: PlatformTimelineItem }) {
-  const payload = item.payload
-  const pricing =
-    item.source === 'pricing' &&
-    payload &&
-    typeof payload === 'object' &&
-    'amountCents' in payload &&
-    typeof (payload as { amountCents: unknown }).amountCents === 'number'
-      ? (payload as { amountCents: number; currency?: string })
-      : null
-
-  return (
-    <article className="rounded-2xl border border-dashed bg-muted/20 p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold capitalize">{item.eventKey.replace(/[._]/g, ' ')}</h3>
-        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{item.source}</span>
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">{formatWhen(item.scannedAt)}</p>
-      {pricing ? (
-        <p className="mt-3 text-sm">
-          <span className="text-muted-foreground">Quoted </span>
-          <span className="font-semibold">
-            {pricing.currency === 'INR' || !pricing.currency ? '₹' : `${pricing.currency} `}
-            {(pricing.amountCents / 100).toFixed(2)}
-          </span>
-        </p>
-      ) : payload != null && typeof payload === 'object' ? (
-        <pre className="mt-3 max-h-32 overflow-auto rounded-lg bg-muted/50 p-2 text-[11px] leading-relaxed">
-          {JSON.stringify(payload, null, 2)}
-        </pre>
-      ) : null}
-    </article>
   )
 }

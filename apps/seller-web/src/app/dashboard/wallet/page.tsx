@@ -4,11 +4,15 @@ import { apiFetch } from '@repo/web-core/api'
 import { Button } from '@repo/ui'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { RazorpayCheckoutTrigger, type RazorpaySettled } from '../../../components/razorpay-checkout-trigger'
 
 export default function WalletPage() {
   const qc = useQueryClient()
   const [amount, setAmount] = useState('100')
+  const [rechargeRupees, setRechargeRupees] = useState('500')
+  const [codRupees, setCodRupees] = useState('100')
   const [msg, setMsg] = useState<string | null>(null)
+  const [payMsg, setPayMsg] = useState<string | null>(null)
 
   const walletQ = useQuery({
     queryKey: ['seller', 'wallet'],
@@ -44,8 +48,21 @@ export default function WalletPage() {
     }
   }
 
+  function onWalletPayment(outcome: RazorpaySettled, detail?: string) {
+    if (outcome === 'success') {
+      setPayMsg('Payment successful — wallet updated.')
+      void qc.invalidateQueries({ queryKey: ['seller', 'wallet'] })
+    } else if (outcome === 'failed') {
+      setPayMsg(detail ?? 'Payment failed.')
+    } else {
+      setPayMsg('Checkout dismissed.')
+    }
+  }
+
   const bal = walletQ.data?.data.wallet
   const rupees = bal ? (bal.balanceCents / 100).toFixed(2) : '—'
+  const rechargePaise = Math.max(0, Math.round(Number(rechargeRupees) * 100))
+  const codPaise = Math.max(0, Math.round(Number(codRupees) * 100))
 
   return (
     <div className="flex flex-col gap-8">
@@ -58,7 +75,66 @@ export default function WalletPage() {
           <p className="mt-2 text-3xl font-semibold">
             {bal ? `${bal.currency} ${rupees}` : '—'}
           </p>
-          <div className="mt-4 flex flex-wrap items-end gap-2">
+          <div className="mt-6 grid gap-6 border-t pt-6 sm:grid-cols-2">
+            <div>
+              <h2 className="text-sm font-semibold">Recharge wallet</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Razorpay test mode: use test keys and cards from the Razorpay dashboard.
+              </p>
+              <label className="mt-3 flex flex-col gap-1 text-sm">
+                Amount (INR)
+                <input
+                  className="max-w-[12rem] rounded-md border bg-background px-2 py-1"
+                  value={rechargeRupees}
+                  onChange={(e) => setRechargeRupees(e.target.value)}
+                  type="number"
+                  min={1}
+                  step="1"
+                />
+              </label>
+              <div className="mt-3">
+                <RazorpayCheckoutTrigger
+                  label="Pay with Razorpay"
+                  disabled={rechargePaise < 100}
+                  createBody={{
+                    purpose: 'WALLET_RECHARGE',
+                    amountPaise: rechargePaise,
+                  }}
+                  onSettled={(o, m) => onWalletPayment(o, m)}
+                />
+              </div>
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold">COD settlement</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Pay platform remittance against wallet COD credits (debits wallet after successful
+                payment).
+              </p>
+              <label className="mt-3 flex flex-col gap-1 text-sm">
+                Amount (INR)
+                <input
+                  className="max-w-[12rem] rounded-md border bg-background px-2 py-1"
+                  value={codRupees}
+                  onChange={(e) => setCodRupees(e.target.value)}
+                  type="number"
+                  min={1}
+                  step="1"
+                />
+              </label>
+              <div className="mt-3">
+                <RazorpayCheckoutTrigger
+                  label="Settle via Razorpay"
+                  disabled={codPaise < 100}
+                  createBody={{
+                    purpose: 'COD_SETTLEMENT',
+                    amountPaise: codPaise,
+                  }}
+                  onSettled={(o, m) => onWalletPayment(o, m)}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="mt-6 flex flex-wrap items-end gap-2 border-t pt-6">
             <label className="text-sm">
               Payout (INR)
               <input
@@ -75,6 +151,7 @@ export default function WalletPage() {
             </Button>
           </div>
           {msg ? <p className="mt-3 text-sm">{msg}</p> : null}
+          {payMsg ? <p className="mt-3 text-sm text-muted-foreground">{payMsg}</p> : null}
         </section>
       )}
 

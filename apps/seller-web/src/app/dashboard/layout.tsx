@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react'
 
-import { SellerAuthGate, SellerNav } from '../../components/auth-gate'
+import { SellerAuthGate } from '../../components/auth-gate'
+import { SellerShell } from '../../components/seller-shell'
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <SellerAuthGate>
-      <SellerNav />
-      <div className="mx-auto max-w-5xl p-6">{children}</div>
+      <SellerShell>{children}</SellerShell>
     </SellerAuthGate>
   )
 }
