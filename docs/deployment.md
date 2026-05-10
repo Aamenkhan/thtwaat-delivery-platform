@@ -93,6 +93,8 @@ Unset those variables after the first run so the password is not kept in shell h
 
 Optional: `WORKER_SEED_HUB_CODE=BLR_CC` (default), `WORKER_SEED_DISPLAY_NAME`, `WORKER_SEED_PHONE`. This creates or updates the user with `Role.WORKER`, bcrypt-hashes the password, links a `Worker` row with `isActive=true` and `homeHubId` set to that hub. Apply the Prisma migration that adds `Worker.homeHubId` before relying on hub assignment.
 
+**Option E — fixed role users (admin / worker / seller):** run seed once with `SEED_FIXED_PRODUCTION_USERS=1` (and `DATABASE_URL` pointing at production). Creates or updates: `admin@thtwaat.com` / `admin123` (`ADMIN`), `worker@thtwaat.com` / `worker123` (`WORKER`, home hub **Bangalore City Hub** `BLR_CC`, `isActive=true`), `seller@thtwaat.com` / `seller123` (`SELLER` + workspace + wallet). Passwords are bcrypt cost 12 (same as API register); existing rows get password updates and refresh tokens are cleared. **Unset the env var after the run** and change passwords in production.
+
 ## Database
 
 - Use **managed PostgreSQL**; enable TLS.

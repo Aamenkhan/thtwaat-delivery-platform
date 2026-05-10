@@ -170,6 +170,237 @@ async function seedProductionWorkerFromEnv() {
   console.log('WORKER_SEED: created', email, '→ hub', hub.code, hub.name)
 }
 
+/** Bcrypt cost — keep in sync with `apps/api` auth.service register/login. */
+const BCRYPT_COST = 12
+
+const FIXED_PRODUCTION_SEED_ORG_SLUG = 'thtwaat-prod-seed-workspace'
+
+/**
+ * Fixed ops + tenant users for production smoke tests (one command, idempotent).
+ *
+ * Set `SEED_FIXED_PRODUCTION_USERS=1` when running seed against production (or local).
+ * Upserts by email: updates password hash + role; revokes refresh tokens; worker → BLR_CC.
+ *
+ * Weak passwords — rotate after first login in real deployments.
+ */
+async function seedFixedProductionRoleUsers() {
+  if (process.env.SEED_FIXED_PRODUCTION_USERS !== '1') return
+
+  const adminEmail = 'admin@thtwaat.com'
+  const adminPassword = 'admin123'
+  const workerEmail = 'worker@thtwaat.com'
+  const workerPassword = 'worker123'
+  const sellerEmail = 'seller@thtwaat.com'
+  const sellerPassword = 'seller123'
+  const sellerCompany = 'Thtwaat Seed Seller'
+
+  const hub = await prisma.hub.findFirst({ where: { code: 'BLR_CC' } })
+  if (!hub) {
+    console.warn(
+      'SEED_FIXED_PRODUCTION_USERS: hub BLR_CC (Bangalore City Hub) missing — run hub seed first; skipping fixed users'
+    )
+    return
+  }
+
+  async function revokeSessions(userId: string) {
+    await prisma.refreshToken.deleteMany({ where: { userId } })
+  }
+
+  // ——— ADMIN ———
+  {
+    const email = adminEmail.trim().toLowerCase()
+    const hash = await bcrypt.hash(adminPassword, BCRYPT_COST)
+    const existing = await prisma.user.findFirst({ where: { email } })
+    if (existing) {
+      await prisma.$transaction(async (tx) => {
+        await tx.worker.deleteMany({ where: { userId: existing.id } })
+        const sellerRow = await tx.seller.findUnique({
+          where: { userId: existing.id },
+        })
+        if (sellerRow) {
+          await tx.seller.delete({ where: { id: sellerRow.id } })
+        }
+        await tx.organizationMember.deleteMany({ where: { userId: existing.id } })
+        await tx.user.update({
+          where: { id: existing.id },
+          data: { passwordHash: hash, role: Role.ADMIN },
+        })
+      })
+      await revokeSessions(existing.id)
+      console.log('SEED_FIXED: updated ADMIN', email)
+    } else {
+      const u = await prisma.user.create({
+        data: { email, passwordHash: hash, role: Role.ADMIN },
+      })
+      console.log('SEED_FIXED: created ADMIN', u.email)
+    }
+  }
+
+  // ——— WORKER (Bangalore City Hub) ———
+  {
+    const email = workerEmail.trim().toLowerCase()
+    const hash = await bcrypt.hash(workerPassword, BCRYPT_COST)
+    const displayName = 'Bangalore City Hub worker'
+    const existing = await prisma.user.findFirst({ where: { email } })
+    if (existing) {
+      await prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { id: existing.id },
+          data: { passwordHash: hash, role: Role.WORKER },
+        })
+        const w = await tx.worker.findUnique({ where: { userId: existing.id } })
+        if (w) {
+          await tx.worker.update({
+            where: { id: w.id },
+            data: {
+              displayName,
+              isActive: true,
+              homeHubId: hub.id,
+              role: WorkerRole.COURIER,
+            },
+          })
+        } else {
+          await tx.worker.create({
+            data: {
+              userId: existing.id,
+              displayName,
+              isActive: true,
+              homeHubId: hub.id,
+              role: WorkerRole.COURIER,
+            },
+          })
+        }
+      })
+      await revokeSessions(existing.id)
+      console.log('SEED_FIXED: updated WORKER', email, '→', hub.code)
+    } else {
+      await prisma.$transaction(async (tx) => {
+        const u = await tx.user.create({
+          data: { email, passwordHash: hash, role: Role.WORKER },
+        })
+        await tx.worker.create({
+          data: {
+            userId: u.id,
+            displayName,
+            isActive: true,
+            homeHubId: hub.id,
+            role: WorkerRole.COURIER,
+          },
+        })
+      })
+      console.log('SEED_FIXED: created WORKER', email, '→', hub.code)
+    }
+  }
+
+  // ——— SELLER (org + wallet) ———
+  {
+    const email = sellerEmail.trim().toLowerCase()
+    const hash = await bcrypt.hash(sellerPassword, BCRYPT_COST)
+    const companyName = sellerCompany.slice(0, 120)
+
+    const existing = await prisma.user.findFirst({ where: { email } })
+    if (existing) {
+      await prisma.$transaction(async (tx) => {
+        await tx.worker.deleteMany({ where: { userId: existing.id } })
+        await tx.user.update({
+          where: { id: existing.id },
+          data: { passwordHash: hash, role: Role.SELLER },
+        })
+        let org = await tx.organization.findUnique({
+          where: { slug: FIXED_PRODUCTION_SEED_ORG_SLUG },
+        })
+        if (!org) {
+          org = await tx.organization.create({
+            data: {
+              name: companyName,
+              slug: FIXED_PRODUCTION_SEED_ORG_SLUG,
+            },
+          })
+        } else {
+          await tx.organization.update({
+            where: { id: org.id },
+            data: { name: companyName },
+          })
+        }
+        const member = await tx.organizationMember.findFirst({
+          where: { organizationId: org.id, userId: existing.id },
+        })
+        if (!member) {
+          await tx.organizationMember.create({
+            data: {
+              organizationId: org.id,
+              userId: existing.id,
+              role: MembershipRole.SELLER,
+            },
+          })
+        }
+        let seller = await tx.seller.findUnique({ where: { userId: existing.id } })
+        if (!seller) {
+          seller = await tx.seller.create({
+            data: {
+              userId: existing.id,
+              companyName,
+              organizationId: org.id,
+            },
+          })
+        } else {
+          await tx.seller.update({
+            where: { id: seller.id },
+            data: { companyName, organizationId: org.id },
+          })
+        }
+        const wallet = await tx.wallet.findUnique({ where: { sellerId: seller.id } })
+        if (!wallet) {
+          await tx.wallet.create({
+            data: { sellerId: seller.id, balanceCents: 0, currency: 'INR' },
+          })
+        }
+      })
+      await revokeSessions(existing.id)
+      console.log('SEED_FIXED: updated SELLER', email)
+    } else {
+      await prisma.$transaction(async (tx) => {
+        const u = await tx.user.create({
+          data: { email, passwordHash: hash, role: Role.SELLER },
+        })
+        let org = await tx.organization.findUnique({
+          where: { slug: FIXED_PRODUCTION_SEED_ORG_SLUG },
+        })
+        if (!org) {
+          org = await tx.organization.create({
+            data: {
+              name: companyName,
+              slug: FIXED_PRODUCTION_SEED_ORG_SLUG,
+            },
+          })
+        }
+        await tx.organizationMember.create({
+          data: {
+            organizationId: org.id,
+            userId: u.id,
+            role: MembershipRole.SELLER,
+          },
+        })
+        const seller = await tx.seller.create({
+          data: {
+            userId: u.id,
+            companyName,
+            organizationId: org.id,
+          },
+        })
+        await tx.wallet.create({
+          data: { sellerId: seller.id, balanceCents: 0, currency: 'INR' },
+        })
+      })
+      console.log('SEED_FIXED: created SELLER', email)
+    }
+  }
+
+  console.log(
+    'SEED_FIXED_PRODUCTION_USERS: done — admin / worker / seller (BLR_CC) ready'
+  )
+}
+
 type HubSeed = {
   code: string
   name: string
@@ -691,6 +922,7 @@ async function main() {
 
   await seedDemoAuthFromEnv()
   await seedProductionWorkerFromEnv()
+  await seedFixedProductionRoleUsers()
 
   console.log(
     'Seed OK — hubs:',
