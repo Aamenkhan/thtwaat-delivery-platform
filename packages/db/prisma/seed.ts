@@ -175,6 +175,60 @@ const BCRYPT_COST = 12
 
 const FIXED_PRODUCTION_SEED_ORG_SLUG = 'thtwaat-prod-seed-workspace'
 
+async function revokeRefreshTokensForUser(userId: string) {
+  await prisma.refreshToken.deleteMany({ where: { userId } })
+}
+
+/**
+ * Create or repair a production ADMIN login. `User` has no `isActive` field; we strip
+ * Worker/Seller rows so ops login is not blocked by tenant profiles.
+ */
+async function upsertProductionAdminUser(emailRaw: string, plainPassword: string) {
+  const email = emailRaw.trim().toLowerCase()
+  const passwordHash = await bcrypt.hash(plainPassword, BCRYPT_COST)
+  const existing = await prisma.user.findFirst({ where: { email } })
+  if (existing) {
+    await prisma.$transaction(async (tx) => {
+      await tx.worker.deleteMany({ where: { userId: existing.id } })
+      const sellerRow = await tx.seller.findUnique({
+        where: { userId: existing.id },
+      })
+      if (sellerRow) {
+        await tx.seller.delete({ where: { id: sellerRow.id } })
+      }
+      await tx.organizationMember.deleteMany({ where: { userId: existing.id } })
+      await tx.user.update({
+        where: { id: existing.id },
+        data: { passwordHash, role: Role.ADMIN },
+      })
+    })
+    await revokeRefreshTokensForUser(existing.id)
+    return { created: false as const, email }
+  }
+  await prisma.user.create({
+    data: { email, passwordHash, role: Role.ADMIN },
+  })
+  return { created: true as const, email }
+}
+
+/**
+ * One-off: repair `admin@thtwaat.com` on production (Render DB). Set `SEED_PRODUCTION_ADMIN=1`.
+ */
+async function seedProductionAdminRepair() {
+  if (process.env.SEED_PRODUCTION_ADMIN !== '1') return
+
+  const email = 'admin@thtwaat.com'
+  const password = 'admin123'
+  const result = await upsertProductionAdminUser(email, password)
+  console.log(
+    'SEED_PRODUCTION_ADMIN: success —',
+    result.created ? 'created' : 'updated',
+    'ADMIN',
+    result.email,
+    `(bcrypt ${BCRYPT_COST}); refresh tokens revoked; production login ready`
+  )
+}
+
 /**
  * Fixed ops + tenant users for production smoke tests (one command, idempotent).
  *
@@ -194,46 +248,20 @@ async function seedFixedProductionRoleUsers() {
   const sellerPassword = 'seller123'
   const sellerCompany = 'Thtwaat Seed Seller'
 
+  const adminResult = await upsertProductionAdminUser(adminEmail, adminPassword)
+  console.log(
+    'SEED_FIXED:',
+    adminResult.created ? 'created' : 'updated',
+    'ADMIN',
+    adminResult.email
+  )
+
   const hub = await prisma.hub.findFirst({ where: { code: 'BLR_CC' } })
   if (!hub) {
     console.warn(
-      'SEED_FIXED_PRODUCTION_USERS: hub BLR_CC (Bangalore City Hub) missing — run hub seed first; skipping fixed users'
+      'SEED_FIXED_PRODUCTION_USERS: hub BLR_CC (Bangalore City Hub) missing — skipping worker + seller only (ADMIN already applied)'
     )
     return
-  }
-
-  async function revokeSessions(userId: string) {
-    await prisma.refreshToken.deleteMany({ where: { userId } })
-  }
-
-  // ——— ADMIN ———
-  {
-    const email = adminEmail.trim().toLowerCase()
-    const hash = await bcrypt.hash(adminPassword, BCRYPT_COST)
-    const existing = await prisma.user.findFirst({ where: { email } })
-    if (existing) {
-      await prisma.$transaction(async (tx) => {
-        await tx.worker.deleteMany({ where: { userId: existing.id } })
-        const sellerRow = await tx.seller.findUnique({
-          where: { userId: existing.id },
-        })
-        if (sellerRow) {
-          await tx.seller.delete({ where: { id: sellerRow.id } })
-        }
-        await tx.organizationMember.deleteMany({ where: { userId: existing.id } })
-        await tx.user.update({
-          where: { id: existing.id },
-          data: { passwordHash: hash, role: Role.ADMIN },
-        })
-      })
-      await revokeSessions(existing.id)
-      console.log('SEED_FIXED: updated ADMIN', email)
-    } else {
-      const u = await prisma.user.create({
-        data: { email, passwordHash: hash, role: Role.ADMIN },
-      })
-      console.log('SEED_FIXED: created ADMIN', u.email)
-    }
   }
 
   // ——— WORKER (Bangalore City Hub) ———
@@ -271,7 +299,7 @@ async function seedFixedProductionRoleUsers() {
           })
         }
       })
-      await revokeSessions(existing.id)
+      await revokeRefreshTokensForUser(existing.id)
       console.log('SEED_FIXED: updated WORKER', email, '→', hub.code)
     } else {
       await prisma.$transaction(async (tx) => {
@@ -356,7 +384,7 @@ async function seedFixedProductionRoleUsers() {
           })
         }
       })
-      await revokeSessions(existing.id)
+      await revokeRefreshTokensForUser(existing.id)
       console.log('SEED_FIXED: updated SELLER', email)
     } else {
       await prisma.$transaction(async (tx) => {
@@ -922,6 +950,7 @@ async function main() {
 
   await seedDemoAuthFromEnv()
   await seedProductionWorkerFromEnv()
+  await seedProductionAdminRepair()
   await seedFixedProductionRoleUsers()
 
   console.log(
