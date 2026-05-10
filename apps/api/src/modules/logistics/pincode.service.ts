@@ -18,7 +18,10 @@ export async function lookupPincode(pincode: string) {
     include: { serviceHub: true },
   })
   if (!row?.active) {
-    throw new HttpError(404, 'Pincode not in serviceable directory')
+    throw new HttpError(
+      404,
+      `Pincode ${pc} is not in the serviceable directory (run DB seed or use a seeded PIN).`
+    )
   }
   return row
 }

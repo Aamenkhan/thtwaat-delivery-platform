@@ -21,7 +21,8 @@ export default function NewShipmentPage() {
     weightGrams: 500,
     codAmount: 0,
     pickupPincode: '560001',
-    deliveryPincode: '560002',
+    /** Must exist in DB seed (`PincodeDirectory`) — 560001 / 560103 are Bengaluru demo rows. */
+    deliveryPincode: '560103',
   })
 
   async function submit(e: React.FormEvent) {
@@ -64,6 +65,11 @@ export default function NewShipmentPage() {
         </Button>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <p className="text-xs text-muted-foreground">
+        Demo PINs (seeded): Bengaluru <code className="rounded bg-muted px-1">560001</code>,{' '}
+        <code className="rounded bg-muted px-1">560103</code> · Mumbai{' '}
+        <code className="rounded bg-muted px-1">400001</code>, <code className="rounded bg-muted px-1">400053</code>.
+      </p>
       <form className="flex flex-col gap-3 text-sm" onSubmit={submit}>
         <Field label="Customer name" v={form.customerName} onV={(v) => setForm({ ...form, customerName: v })} />
         <Field label="Customer phone" v={form.customerPhone} onV={(v) => setForm({ ...form, customerPhone: v })} />
