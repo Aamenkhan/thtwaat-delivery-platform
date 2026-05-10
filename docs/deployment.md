@@ -54,8 +54,11 @@ Use the **repository root** as the service root so `pnpm` workspaces resolve. Th
 1. New service from repo; **build** with something like:  
    `corepack enable && corepack prepare pnpm@9.15.0 --activate && pnpm install --frozen-lockfile && pnpm --filter @repo/api run build`
 2. **Start**: `pnpm --filter @repo/api start` (or `node apps/api/dist/server.js` from repo root).
-3. Attach **PostgreSQL** plugin and copy connection string into `DATABASE_URL`.
-4. Run migrations: `pnpm db:migrate` or `prisma migrate deploy` in CI against production.
+3. Set **`CORS_ORIGIN`** on the API to a comma-separated list of your deployed Next.js origins (scheme + host, no path), e.g. `https://seller.vercel.app,https://admin.vercel.app,https://worker.vercel.app`. If you omit it, Express and Socket.IO reflect the browser `Origin` header, which often works but is looser than an explicit allowlist.
+4. Attach **PostgreSQL** plugin and copy connection string into `DATABASE_URL`.
+5. Run migrations: `pnpm db:migrate` or `prisma migrate deploy` in CI against production.
+
+Each Next app ships a committed **`.env.production`** pointing at the shared API URL so `next build` embeds `NEXT_PUBLIC_API_URL` without relying on host-specific secrets. Override per environment in the Vercel dashboard if needed.
 
 ## Database
 

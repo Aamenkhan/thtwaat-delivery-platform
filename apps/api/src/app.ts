@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import { resolveCorsOrigin } from './lib/cors-origins.js'
 import { authRouter } from './modules/auth/auth.routes.js'
 import { orderRouter } from './modules/order/order.routes.js'
 import { scanRouter } from './modules/scan/scan.routes.js'
@@ -34,7 +35,7 @@ export function createApp() {
   const app = express()
   app.use(
     cors({
-      origin: process.env.CORS_ORIGIN?.split(',') ?? true,
+      origin: resolveCorsOrigin(),
       credentials: true,
     })
   )

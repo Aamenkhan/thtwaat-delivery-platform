@@ -2,6 +2,7 @@ import type { Server as HttpServer } from 'node:http'
 import { Server } from 'socket.io'
 import { domainEvents } from './events.js'
 import { verifyAccessToken } from './jwt.js'
+import { resolveCorsOrigin } from './cors-origins.js'
 
 let io: Server | null = null
 
@@ -25,7 +26,7 @@ export function initRealtimeServer(httpServer: HttpServer) {
   const requireSocketAuth = process.env.SOCKET_REQUIRE_AUTH === '1'
 
   io = new Server(httpServer, {
-    cors: { origin: process.env.CORS_ORIGIN?.split(',') ?? true },
+    cors: { origin: resolveCorsOrigin() },
   })
 
   io.use((socket, next) => {

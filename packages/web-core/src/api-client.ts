@@ -24,28 +24,63 @@ export class ApiError extends Error {
   }
 }
 
-export function getApiBaseUrl(): string {
-  if (typeof window === 'undefined') {
-    return (
-      process.env.NEXT_PUBLIC_API_URL ??
-      process.env.API_INTERNAL_URL ??
-      'http://localhost:4000'
+const LOCAL_DEV_API = 'http://localhost:4000'
+
+function trimUrl(v: string | undefined): string | undefined {
+  const t = v?.trim()
+  return t || undefined
+}
+
+function requirePublicApiUrlForBrowser(url: string | undefined): string {
+  const u = trimUrl(url)
+  if (u) return u
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'NEXT_PUBLIC_API_URL must be set for production browser builds (e.g. .env.production or host env).'
     )
   }
-  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
+  return LOCAL_DEV_API
+}
+
+function resolveServerApiBase(): string {
+  const u =
+    trimUrl(process.env.NEXT_PUBLIC_API_URL) ??
+    trimUrl(process.env.API_INTERNAL_URL)
+  if (u) return u
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'Set NEXT_PUBLIC_API_URL or API_INTERNAL_URL for production server-side API calls.'
+    )
+  }
+  return LOCAL_DEV_API
+}
+
+/** Base URL for REST calls — always prefer `process.env.NEXT_PUBLIC_API_URL` in the browser. */
+export function getApiBaseUrl(): string {
+  if (typeof window === 'undefined') {
+    return resolveServerApiBase()
+  }
+  return requirePublicApiUrlForBrowser(process.env.NEXT_PUBLIC_API_URL)
 }
 
 export function getSocketUrl(): string {
   if (typeof window !== 'undefined') {
-    const u = process.env.NEXT_PUBLIC_SOCKET_URL ?? process.env.NEXT_PUBLIC_API_URL
-    if (u) return u.replace(/\/$/, '')
+    const u =
+      trimUrl(process.env.NEXT_PUBLIC_SOCKET_URL) ??
+      trimUrl(process.env.NEXT_PUBLIC_API_URL)
+    return requirePublicApiUrlForBrowser(u).replace(/\/$/, '')
   }
-  return (
-    process.env.NEXT_PUBLIC_SOCKET_URL ??
-    process.env.NEXT_PUBLIC_API_URL ??
-    process.env.API_INTERNAL_URL ??
-    'http://localhost:4000'
-  ).replace(/\/$/, '')
+  const u =
+    trimUrl(process.env.NEXT_PUBLIC_SOCKET_URL) ??
+    trimUrl(process.env.NEXT_PUBLIC_API_URL) ??
+    trimUrl(process.env.API_INTERNAL_URL)
+  if (u) return u.replace(/\/$/, '')
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'Set NEXT_PUBLIC_SOCKET_URL, NEXT_PUBLIC_API_URL, or API_INTERNAL_URL for production Socket.IO.'
+    )
+  }
+  return LOCAL_DEV_API.replace(/\/$/, '')
 }
 
 async function parseBody(res: Response): Promise<unknown> {

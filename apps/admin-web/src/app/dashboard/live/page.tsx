@@ -1,14 +1,10 @@
 'use client'
 
-import { apiFetch } from '@repo/web-core/api'
+import { apiFetch, getApiBaseUrl } from '@repo/web-core/api'
 import { createRealtimeSocket, subscribeOrderStatus } from '@repo/web-core/socket'
 import { Button } from '@repo/ui'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
-
-function getBase() {
-  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
-}
 
 export default function LiveTrackingPage() {
   const qc = useQueryClient()
@@ -20,7 +16,7 @@ export default function LiveTrackingPage() {
     queryKey: ['public-timeline', ref],
     queryFn: async () => {
       const res = await fetch(
-        `${getBase()}/v1/tracking/public/${encodeURIComponent(ref)}/timeline`
+        `${getApiBaseUrl()}/v1/tracking/public/${encodeURIComponent(ref)}/timeline`
       )
       if (!res.ok) throw new Error('Not found')
       return (await res.json()) as { data: unknown }

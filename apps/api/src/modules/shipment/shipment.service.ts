@@ -128,6 +128,7 @@ export async function qrPayloadForOrder(publicId: string, sellerId: string) {
   const base =
     process.env.PUBLIC_APP_URL?.replace(/\/$/, '') ??
     process.env.PUBLIC_TRACKING_BASE_URL?.replace(/\/$/, '') ??
+    process.env.RENDER_EXTERNAL_URL?.replace(/\/$/, '') ??
     'http://localhost:4000'
   const tid = order.shipment?.trackingPublicId ?? order.publicId
   return {

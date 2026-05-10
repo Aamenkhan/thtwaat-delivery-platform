@@ -1,13 +1,29 @@
 'use client'
 
-import { loginRequest } from '@repo/web-core/api'
+import { getApiBaseUrl, loginRequest } from '@repo/web-core/api'
 import { Button } from '@repo/ui'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
+function sellerLoginHref(): string | undefined {
+  const b = process.env.NEXT_PUBLIC_SELLER_WEB_URL?.replace(/\/$/, '')
+  if (b) return `${b}/login`
+  if (process.env.NODE_ENV === 'development') return 'http://localhost:3001/login'
+  return undefined
+}
+
+function workerLoginHref(): string | undefined {
+  const b = process.env.NEXT_PUBLIC_WORKER_WEB_URL?.replace(/\/$/, '')
+  if (b) return `${b}/login`
+  if (process.env.NODE_ENV === 'development') return 'http://localhost:3003/login'
+  return undefined
+}
+
 export default function AdminLoginPage() {
   const router = useRouter()
+  const sellerHref = sellerLoginHref()
+  const workerHref = workerLoginHref()
   const [err, setErr] = useState<string | null>(null)
   useEffect(() => {
     setErr(new URLSearchParams(window.location.search).get('error'))
@@ -45,7 +61,7 @@ export default function AdminLoginPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             API:{' '}
             <code className="rounded bg-muted px-1 py-0.5 text-xs">
-              {process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'}
+              {getApiBaseUrl()}
             </code>
           </p>
         </div>
@@ -84,15 +100,17 @@ export default function AdminLoginPage() {
           <Link href="/dashboard">Dashboard (agar session ho)</Link>
         </Button>
       </div>
-      <p className="text-center text-xs text-muted-foreground">
-        <a className="text-primary underline" href="http://localhost:3001/login">
-          Seller (3001)
-        </a>
-        {' · '}
-        <a className="text-primary underline" href="http://localhost:3003/login">
-          Worker (3003)
-        </a>
-      </p>
+      {sellerHref && workerHref ? (
+        <p className="text-center text-xs text-muted-foreground">
+          <a className="text-primary underline" href={sellerHref}>
+            Seller
+          </a>
+          {' · '}
+          <a className="text-primary underline" href={workerHref}>
+            Worker
+          </a>
+        </p>
+      ) : null}
     </main>
   )
 }
