@@ -1,74 +1,97 @@
-import { Hono } from 'hono'
-import { cors } from 'hono/cors'
-import { prisma } from './lib/db.js'
-import { jsonError, jsonOk } from './lib/http.js'
-import './types/hono.js'
-import { hubRoutes } from './modules/hub-service/routes.js'
-import { notifyAdminRoutes } from './modules/notify-service/admin-routes.js'
-import { notifyRoutes } from './modules/notify-service/routes.js'
-import { orderRoutes } from './modules/order-service/routes.js'
-import { otpRoutes } from './modules/otp-service/routes.js'
-import { payoutRoutes } from './modules/payout-service/routes.js'
-import { pricingRoutes } from './modules/pricing-service/routes.js'
-import { scanRoutes } from './modules/scan-service/routes.js'
-import { workerRoutes } from './modules/worker-service/routes.js'
+import express from 'express'
+import cors from 'cors'
+import { authRouter } from './modules/auth/auth.routes.js'
+import { orderRouter } from './modules/order/order.routes.js'
+import { scanRouter } from './modules/scan/scan.routes.js'
+import { otpRouter } from './modules/otp/otp.routes.js'
+import { hubRouter } from './modules/hub/hub.routes.js'
+import { pricingRouter } from './modules/pricing/pricing.routes.js'
+import { workerRouter } from './modules/worker/worker.routes.js'
+import { trackingRouter } from './modules/tracking/tracking.routes.js'
+import { platformRouter } from './modules/platform/platform.routes.js'
+import { publicApiRouter } from './modules/public-api/public.routes.js'
+import { sellerRouter } from './modules/seller/seller.routes.js'
+import { wooCommerceRouter } from './modules/woocommerce/woocommerce.routes.js'
+import {
+  shopifyOauthRouter,
+  shopifyWebhookRouter,
+} from './modules/shopify/shopify.routes.js'
+import { errorHandler } from './middleware/error-handler.js'
+import { prisma } from './lib/prisma.js'
+import { domainEvents } from './lib/events.js'
+import { registerOrderWebhookBridge } from './integrations/order-webhook-bridge.js'
+import { registerEcommerceJobBridge } from './integrations/ecommerce-job-bridge.js'
+import { apiV1Router } from './routes/api-v1.routes.js'
+import { adminLogisticsRouter } from './modules/admin-logistics/admin-logistics.routes.js'
+import { adminShipmentsRouter } from './modules/admin-shipments/admin-shipments.routes.js'
+import { adminOpsRouter } from './modules/admin-ops/admin-ops.routes.js'
+import { pingRedis } from './lib/redis.js'
 
-function parseOrigins(): string[] | '*' {
-  const raw = process.env.CORS_ORIGIN
-  if (!raw) return '*'
-  return raw.split(',').map((s) => s.trim()).filter(Boolean)
-}
+registerOrderWebhookBridge()
+registerEcommerceJobBridge()
 
 export function createApp() {
-  const app = new Hono()
-  const origins = parseOrigins()
+  const app = express()
+  app.use(
+    cors({
+      origin: process.env.CORS_ORIGIN?.split(',') ?? true,
+      credentials: true,
+    })
+  )
 
   app.use(
-    '*',
-    cors({
-      origin: (origin) => {
-        if (origins === '*') return '*'
-        if (!origin) return '*'
-        return origins.includes(origin) ? origin : origins[0] ?? '*'
-      },
-    })
+    '/v1/integrations/shopify/webhooks',
+    express.raw({ type: '*/*', limit: '2mb' }),
+    shopifyWebhookRouter
   )
 
-  app.get('/health', (c) =>
-    c.json({ ok: true as const, service: 'logistics-api' })
-  )
+  app.use(express.json({ limit: '2mb' }))
 
-  app.get('/v1/public/orders/:publicId', async (c) => {
-    const publicId = c.req.param('publicId')
-    const order = await prisma.order.findUnique({
-      where: { publicId },
-      select: {
-        publicId: true,
-        status: true,
-        destinationLat: true,
-        destinationLng: true,
-        hubId: true,
-        returnInitiated: true,
-        photoProofUrls: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    })
-    if (!order) {
-      return jsonError(c, 'not_found', 'Order not found', 404)
+  app.get('/health', async (_req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`
+      const redisOk = await pingRedis()
+      res.json({
+        status: 'ok',
+        database: 'connected',
+        redis: redisOk ? 'connected' : process.env.REDIS_URL ? 'error' : 'skipped',
+        service: 'thtwaat-delivery-platform',
+      })
+    } catch {
+      res.status(503).json({
+        status: 'error',
+        database: 'disconnected',
+        redis: 'unknown',
+        service: 'thtwaat-delivery-platform',
+      })
     }
-    return jsonOk(c, { order })
   })
 
-  app.route('/v1/orders', orderRoutes)
-  app.route('/v1/scans', scanRoutes)
-  app.route('/v1/hubs', hubRoutes)
-  app.route('/v1/otp', otpRoutes)
-  app.route('/v1/payouts', payoutRoutes)
-  app.route('/v1/pricing', pricingRoutes)
-  app.route('/v1/workers', workerRoutes)
-  app.route('/v1/notify', notifyRoutes)
-  app.route('/v1/platform', notifyAdminRoutes)
+  app.use('/v1/auth', authRouter)
+  app.use('/v1/orders', orderRouter)
+  app.use('/v1/scans', scanRouter)
+  app.use('/v1/otp', otpRouter)
+  app.use('/v1/admin/logistics', adminLogisticsRouter)
+  app.use('/v1/admin/shipments', adminShipmentsRouter)
+  app.use('/v1/admin/ops', adminOpsRouter)
+  app.use('/v1/hubs', hubRouter)
+  app.use('/v1/pricing', pricingRouter)
+  app.use('/v1/workers', workerRouter)
+  app.use('/v1/tracking', trackingRouter)
 
+  app.use('/v1/platform', platformRouter)
+  app.use('/v1/public', publicApiRouter)
+  app.use('/api/v1', apiV1Router)
+  app.use('/v1/seller', sellerRouter)
+  app.use('/v1/integrations/woocommerce', wooCommerceRouter)
+  app.use('/v1/integrations/shopify', shopifyOauthRouter)
+
+  if (process.env.DEBUG_DOMAIN_EVENTS === '1') {
+    domainEvents.on('order:status:changed', (p) => {
+      console.log('[event] order:status:changed', p)
+    })
+  }
+
+  app.use(errorHandler)
   return app
 }

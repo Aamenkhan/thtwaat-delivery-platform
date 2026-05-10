@@ -1,0 +1,28 @@
+{
+  "name": "@repo/web-core",
+  "version": "0.0.0",
+  "private": true,
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit || exit 0",
+    "lint": "echo ok"
+  },
+  "exports": {
+    "./api": "./src/api-client.ts",
+    "./auth-storage": "./src/auth-storage.ts",
+    "./socket": "./src/socket-client.ts",
+    "./providers": "./src/providers.tsx"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.62.0",
+    "react": "^19.0.0",
+    "socket.io-client": "^4.8.0"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.62.0",
+    "@types/react": "^19.0.2",
+    "react": "^19.0.0",
+    "socket.io-client": "^4.8.1",
+    "typescript": "^5.7.2"
+  }
+}

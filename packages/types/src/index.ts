@@ -1,12 +1,16 @@
 export type OrderStatus =
   | 'CREATED'
+  | 'PICKUP_ASSIGNED'
   | 'PICKED_UP'
+  | 'AT_SOURCE_HUB'
   | 'IN_TRANSIT'
-  | 'AT_HUB'
+  | 'AT_DESTINATION_HUB'
   | 'OUT_FOR_DELIVERY'
   | 'DELIVERED'
   | 'RETURN_REQUESTED'
-  | 'RETURNED'
+  | 'RETURN_PICKED'
+  | 'RETURN_IN_TRANSIT'
+  | 'RETURN_COMPLETED'
   | 'CANCELLED'
 
 export type WebhookEventType =
@@ -77,4 +81,5 @@ export interface SellerDashboardSummary {
   openOrders: number
   deliveredThisWeek: number
   returnsPending: number
+  shipmentsByStatusLast30d?: Record<string, number>
 }

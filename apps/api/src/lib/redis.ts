@@ -4,18 +4,20 @@ let client: Redis | null = null
 
 export function getRedis(): Redis | null {
   const url = process.env.REDIS_URL
-  if (!url) {
-    return null
-  }
+  if (!url) return null
   if (!client) {
-    client = new Redis(url, { maxRetriesPerRequest: null })
+    client = new Redis(url, { maxRetriesPerRequest: null, enableReadyCheck: true })
   }
   return client
 }
 
-export async function disconnectRedis(): Promise<void> {
-  if (client) {
-    await client.quit()
-    client = null
+export async function pingRedis(): Promise<boolean> {
+  try {
+    const r = getRedis()
+    if (!r) return false
+    const p = await r.ping()
+    return p === 'PONG'
+  } catch {
+    return false
   }
 }

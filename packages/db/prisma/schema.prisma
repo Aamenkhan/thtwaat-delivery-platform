@@ -1,0 +1,957 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Thtwaat Delivery Platform — order lifecycle (DaaS / hyperlocal + returns).
+enum OrderStatus {
+  CREATED
+  PICKUP_ASSIGNED
+  PICKED_UP
+  AT_SOURCE_HUB
+  IN_TRANSIT
+  AT_DESTINATION_HUB
+  OUT_FOR_DELIVERY
+  DELIVERED
+  RETURN_REQUESTED
+  RETURN_PICKED
+  RETURN_IN_TRANSIT
+  RETURN_COMPLETED
+  CANCELLED
+}
+
+enum OrderType {
+  LOCAL_DELIVERY
+  BUS_PARCEL
+  TRUCKLOAD
+}
+
+/// Scan / proof events (strict sequence enforced in API status engine).
+enum ScanEvent {
+  /// System / API booking line (no status transition).
+  BOOKING_RECEIVED
+  PICKUP_SCAN
+  SELLER_CONFIRM
+  HUB_DROP_SCAN
+  HUB_ACCEPT
+  DELIVERY_SCAN
+  OTP_VERIFY
+  DELIVERED
+  RETURN_INIT
+  RETURN_SCAN
+  RETURN_HUB_ACCEPT
+}
+
+/// Worker roles (legacy enum values retained for DB compatibility; map to spec in UI: COURIER→delivery, PICKUP_AGENT→pickup, etc.).
+enum WorkerRole {
+  COURIER
+  HUB_OPERATOR
+  PICKUP_AGENT
+  BUS_STEWARD
+  SORTER
+  TRANSPORT_PARTNER
+  ADMIN
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+/// Non-delivery report lifecycle (Indian COD / re-attempt flows).
+enum NdrStatus {
+  OPEN
+  RESCHEDULED
+  CLOSED_DELIVERED
+  CLOSED_RTO
+}
+
+/// Platform + tenant login roles (RBAC). Legacy `ADMIN`/`WORKER`/`HUB` kept for migration.
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  SELLER
+  CUSTOMER
+  WORKER
+  HUB
+  HUB_MANAGER
+  DELIVERY_WORKER
+  TRANSPORT_PARTNER
+}
+
+/// Role inside an organization (workspace).
+enum MembershipRole {
+  SELLER
+  HUB_MANAGER
+  DELIVERY_WORKER
+  TRANSPORT_PARTNER
+}
+
+/// PAN-India hub tier (national sort → last-mile delivery center).
+enum HubType {
+  NATIONAL
+  STATE
+  CITY
+  DELIVERY_CENTER
+}
+
+enum TransportMode {
+  SURFACE
+  AIR
+}
+
+/// Service promise / SLA bucket for a pincode or zone.
+enum DeliveryZoneClass {
+  SAME_DAY
+  NEXT_DAY
+  STANDARD
+  REMOTE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String?  @unique
+  phone        String?  @unique
+  passwordHash String?
+  role         Role     @default(CUSTOMER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  seller           Seller?
+  customer         Customer?
+  worker           Worker?
+  otpVerifications OTPVerification[]
+  manifestsLocked  Manifest[]        @relation("ManifestLockedBy")
+  auditLogs        AuditLog[]
+  organizationMembers OrganizationMember[]
+  refreshTokens       RefreshToken[]
+}
+
+/// SaaS workspace / tenant boundary. All seller-scoped data hangs off `Seller.organizationId`.
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members OrganizationMember[]
+  sellers Seller[]
+}
+
+model OrganizationMember {
+  id               String           @id @default(cuid())
+  organizationId   String
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role             MembershipRole
+  createdAt        DateTime         @default(now())
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model RefreshToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model Seller {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  companyName String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orders               Order[]
+  payouts              Payout[]
+  wallet               Wallet?
+  truckBookings        TruckBooking[]
+  connectedStores      ConnectedStore[]
+  apiKeys              ApiKey[]
+  webhookSubscriptions SellerWebhookSubscription[]
+  integrationJobs      IntegrationJob[]
+  walletLedgerEntries  WalletLedgerEntry[]
+
+  @@index([organizationId])
+}
+
+model Customer {
+  id           String   @id @default(cuid())
+  userId       String?  @unique
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  fullName     String
+  phone        String
+  email        String?
+  addressLine1 String?
+  city         String?
+  regionCode   String?
+  postalCode   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders Order[]
+}
+
+/// Normalized pickup / delivery snapshot for bookings and compliance exports.
+model Address {
+  id            String   @id @default(cuid())
+  label         String?
+  line1         String
+  line2         String?
+  city          String?
+  state         String?
+  postalCode    String?
+  country       String   @default("IN")
+  latitude      Float?
+  longitude     Float?
+  contactName   String?
+  contactPhone  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  pickupForOrders   Order[] @relation("OrderPickupLocation")
+  deliveryForOrders Order[] @relation("OrderDeliveryLocation")
+
+  @@index([postalCode])
+}
+
+model Hub {
+  id        String   @id @default(cuid())
+  name      String
+  /// City / service area label (e.g. Bhopal).
+  city      String?
+  /// Stable hub code for ops and routing (e.g. BHOPAL_CC).
+  code      String?  @unique
+  state     String?
+  hubType   HubType  @default(CITY)
+  /// Optional hierarchy: e.g. city hub → national sort hub (Delhi NHD).
+  parentHubId String?
+  parentHub   Hub?    @relation("HubHierarchy", fields: [parentHubId], references: [id], onDelete: SetNull)
+  childHubs   Hub[]   @relation("HubHierarchy")
+  /// JSON: [{ "from": "110001", "to": "110099" }] or prefix rules.
+  pincodeRanges Json?
+  latitude  Float
+  longitude Float
+  address   String?
+  /// Geo zone / service polygon hint (optional GeoJSON or WKT)
+  zoneGeo   Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ordersSource         Order[]              @relation("OrderSourceHub")
+  ordersDestination    Order[]              @relation("OrderDestinationHub")
+  ordersCurrent        Order[]              @relation("OrderCurrentHub")
+  scanLogs             ScanLog[]
+  hubZones             HubZone[]
+  zonePricing          HubZonePricing[]
+  pricingRules         PricingRule[]
+  manifestsFrom        Manifest[]           @relation("ManifestFromHub")
+  manifestsTo          Manifest[]           @relation("ManifestToHub")
+  busRoutesOrigin      BusRoute[]           @relation("RouteOriginHub")
+  busRoutesDestination BusRoute[]           @relation("RouteDestinationHub")
+  routesFrom           InterHubRoute[]      @relation("RouteOrigin")
+  routesTo             InterHubRoute[]      @relation("RouteDest")
+  servicePincodes      PincodeDirectory[]   @relation("PincodeServiceHub")
+}
+
+/// Scheduled lane between two hubs (surface / air trunk).
+model InterHubRoute {
+  id          String        @id @default(cuid())
+  originHubId String
+  originHub   Hub           @relation("RouteOrigin", fields: [originHubId], references: [id], onDelete: Cascade)
+  destHubId   String
+  destHub     Hub           @relation("RouteDest", fields: [destHubId], references: [id], onDelete: Cascade)
+  mode        TransportMode @default(SURFACE)
+  transitDays Int           @default(2)
+  distanceKm  Float?
+  active      Boolean       @default(true)
+  priority    Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([originHubId, destHubId, mode])
+  @@index([originHubId])
+  @@index([destHubId])
+}
+
+/// Sample / seed pincode rows for routing + SLA (expand to full India DB in production).
+model PincodeDirectory {
+  pincode      String              @id
+  city         String
+  state        String
+  latitude     Float?
+  longitude    Float?
+  zoneClass    DeliveryZoneClass   @default(STANDARD)
+  serviceHubId String
+  serviceHub   Hub                 @relation("PincodeServiceHub", fields: [serviceHubId], references: [id], onDelete: Restrict)
+  active       Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@index([city, state])
+  @@index([serviceHubId])
+}
+
+/// National pricing slabs (dead weight bands + surcharges).
+model IndiaPricingSlab {
+  id                   String   @id @default(cuid())
+  code                 String   @unique
+  label                String
+  minDeadWeightGrams   Int
+  maxDeadWeightGrams   Int
+  baseFeePaise          Int
+  per500gPaise         Int?
+  volumetricDivisor    Int      @default(5000)
+  codFeePercent        Float    @default(0.02)
+  fuelSurchargePercent Float    @default(0.08)
+  interstateFeePaise Int      @default(2500)
+  expressMultiplier    Float    @default(1.35)
+  active               Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+/// Named geo zone under a hub (multi-zone city ops).
+model HubZone {
+  id        String   @id @default(cuid())
+  hubId     String
+  hub       Hub      @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  code      String
+  name      String
+  zoneClass DeliveryZoneClass?
+  zoneGeo   Json?
+  priority  Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  zonePricing HubZonePricing[]
+
+  @@unique([hubId, code])
+  @@index([hubId, active])
+}
+
+model Worker {
+  id          String     @id @default(cuid())
+  userId      String?    @unique
+  user        User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  displayName String
+  phone       String?
+  role        WorkerRole @default(COURIER)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  assignedOrders   Order[]          @relation("OrderAssignedWorker")
+  pickupForOrders  Order[]          @relation("OrderPickupWorker")
+  scanLogs         ScanLog[]
+  earnings         WorkerEarning[]
+  workerLocations  WorkerLocation[]
+}
+
+/// Live gig-worker GPS trail (Socket.IO + batch writes).
+model WorkerLocation {
+  id         String   @id @default(cuid())
+  workerId   String
+  worker     Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  latitude   Float
+  longitude  Float
+  accuracyM  Float?
+  recordedAt DateTime @default(now())
+
+  @@index([workerId, recordedAt])
+}
+
+model Order {
+  id       String @id @default(cuid())
+  publicId String @unique @default(cuid())
+  qrCode   String @unique
+
+  orderType OrderType   @default(LOCAL_DELIVERY)
+  status    OrderStatus @default(CREATED)
+
+  sellerId String
+  seller   Seller @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  sourceHubId String?
+  sourceHub   Hub?    @relation("OrderSourceHub", fields: [sourceHubId], references: [id], onDelete: SetNull)
+
+  destinationAddress String?
+  destinationLat     Float?
+  destinationLng     Float?
+
+  pickupLocationId String?
+  pickupLocation   Address? @relation("OrderPickupLocation", fields: [pickupLocationId], references: [id], onDelete: SetNull)
+  deliveryLocationId String?
+  deliveryLocation   Address? @relation("OrderDeliveryLocation", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+
+  pickupAddress String?
+  pickupLat     Float?
+  pickupLng     Float?
+  parcelType    String?
+  weightGrams   Int?
+  dimensionsJson Json?
+  codAmountCents Int?
+  estimatedDeliveryAt DateTime?
+
+  pickupPincode    String?
+  deliveryPincode  String?
+  /// Resolved PAN-India route: hubs, mode, SLA, legs.
+  routingMeta      Json?
+  destinationHubId String?
+  destinationHub   Hub?    @relation("OrderDestinationHub", fields: [destinationHubId], references: [id], onDelete: SetNull)
+
+  currentHubId String?
+  currentHub   Hub?    @relation("OrderCurrentHub", fields: [currentHubId], references: [id], onDelete: SetNull)
+
+  /// Last-mile / delivery worker.
+  assignedWorkerId String?
+  assignedWorker   Worker? @relation("OrderAssignedWorker", fields: [assignedWorkerId], references: [id], onDelete: SetNull)
+
+  /// First-mile pickup worker (optional; see PICKUP_ASSIGNED).
+  pickupWorkerId String?
+  pickupWorker   Worker? @relation("OrderPickupWorker", fields: [pickupWorkerId], references: [id], onDelete: SetNull)
+
+  manifestId String?
+  manifest   Manifest? @relation(fields: [manifestId], references: [id], onDelete: SetNull)
+
+  busTripId String?
+  busTrip   BusTrip? @relation(fields: [busTripId], references: [id], onDelete: SetNull)
+
+  returnInitiated Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scanLogs         ScanLog[]
+  photos           OrderPhoto[]
+  orderItems       OrderItem[]
+  shipment         Shipment?
+  trackingEvents   TrackingEvent[]
+  returnOrder      ReturnOrder?
+  workerLedger     WorkerEarning[]
+  ecommerceLinks   EcommerceOrderLink[]
+  ndrAttempts        NdrAttempt[]
+  deliveryExceptions DeliveryException[]
+  walletLedgerEntries WalletLedgerEntry[]
+
+  @@index([sellerId, status])
+  @@index([qrCode])
+  @@index([status, updatedAt])
+}
+
+/// Line items for manifests, insurance, and weight pricing.
+model OrderItem {
+  id           String   @id @default(cuid())
+  orderId      String
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku          String?
+  title        String
+  quantity     Int      @default(1)
+  weightGrams  Int?
+  valueCents   Int?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([orderId])
+}
+
+/// Shipment record (public tracking id, partner metadata).
+model Shipment {
+  id                 String   @id @default(cuid())
+  orderId            String   @unique
+  order              Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  trackingPublicId   String   @unique @default(cuid())
+  /// Human-facing id (e.g. TW-AB12CD34) for labels and IVR; unique when set.
+  trackingNumber     String?  @unique
+  carrier            String?
+  externalTrackingId String?
+  metadata           Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([trackingNumber])
+}
+
+/// Denormalized timeline for APIs, webhooks, and realtime (beyond raw ScanLog).
+model TrackingEvent {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  source    String
+  eventKey  String
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+/// Every scan records QR, worker, geo, time, and proof URL (per platform contract).
+model ScanLog {
+  id      String        @id @default(cuid())
+  orderId String
+  order   Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  event   ScanEvent
+
+  qrCode   String
+  /// Null for automated API booking logs (see BOOKING_RECEIVED).
+  workerId String?
+  worker   Worker? @relation(fields: [workerId], references: [id], onDelete: SetNull)
+
+  photoUrl String
+  latitude  Float
+  longitude Float
+  scannedAt DateTime
+
+  hubId String?
+  hub   Hub?    @relation(fields: [hubId], references: [id], onDelete: SetNull)
+
+  metadata Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId, scannedAt])
+  @@index([event])
+  @@index([workerId])
+  @@index([qrCode])
+}
+
+model OrderPhoto {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  url         String
+  kind        String   @default("PROOF_OF_DELIVERY")
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([orderId])
+}
+
+model OTPVerification {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String
+  purpose    String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  orderId    String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([phone, purpose, expiresAt])
+  @@index([orderId])
+}
+
+model Payout {
+  id          String       @id @default(cuid())
+  sellerId    String
+  seller      Seller       @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  amountCents Int
+  currency    String       @default("INR")
+  status      PayoutStatus @default(PENDING)
+  reference   String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([sellerId, createdAt])
+}
+
+/// Seller COD / remittance ledger (append-only; balance on Wallet is denormalized).
+model WalletLedgerEntry {
+  id                String   @id @default(cuid())
+  sellerId          String
+  seller            Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  orderId           String?
+  order             Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  /// COD_CREDIT | PAYOUT_DEBIT | ADJUSTMENT | FEE_DEBIT
+  type              String
+  amountCents       Int
+  balanceAfterCents Int
+  currency          String   @default("INR")
+  metadata          Json?
+  createdAt         DateTime @default(now())
+
+  @@index([sellerId, createdAt])
+  @@index([orderId, type])
+}
+
+model NdrAttempt {
+  id            String    @id @default(cuid())
+  orderId       String
+  order         Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  attemptNo     Int       @default(1)
+  reasonCode    String
+  notes         String?
+  status        NdrStatus @default(OPEN)
+  nextAttemptAt DateTime?
+  resolvedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([orderId, status])
+}
+
+model DeliveryException {
+  id         String    @id @default(cuid())
+  orderId    String
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  code       String
+  note       String?
+  status     String     @default("OPEN")
+  reportedAt DateTime   @default(now())
+  resolvedAt DateTime?
+
+  @@index([orderId, status])
+}
+
+model SettlementBatch {
+  id          String   @id @default(cuid())
+  kind        String
+  status      String   @default("PENDING")
+  totalCents  Int?
+  metadata    Json?
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+
+  earnings WorkerEarning[]
+
+  @@index([status, startedAt])
+}
+
+model WorkerEarning {
+  id          String   @id @default(cuid())
+  workerId    String
+  worker      Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  orderId     String?
+  order       Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  amountCents Int
+  /// PICKUP | DELIVERY | TRANSPORT | ADJUSTMENT
+  kind        String
+  note        String?
+  settledAt   DateTime?
+  settlementBatchId String?
+  settlementBatch   SettlementBatch? @relation(fields: [settlementBatchId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([workerId, createdAt])
+  @@index([orderId])
+  @@index([settlementBatchId])
+}
+
+model Manifest {
+  id           String    @id @default(cuid())
+  manifestCode String    @unique @default(cuid())
+  fromHubId    String
+  fromHub      Hub       @relation("ManifestFromHub", fields: [fromHubId], references: [id], onDelete: Restrict)
+  toHubId      String
+  toHub        Hub       @relation("ManifestToHub", fields: [toHubId], references: [id], onDelete: Restrict)
+
+  status String @default("DRAFT")
+
+  isLocked   Boolean   @default(false)
+  lockedAt   DateTime?
+  lockedById String?
+  lockedBy   User?     @relation("ManifestLockedBy", fields: [lockedById], references: [id], onDelete: SetNull)
+
+  dispatchedAt DateTime?
+  receivedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders   Order[]
+  busTrips BusTrip[]
+
+  @@index([fromHubId, toHubId])
+}
+
+model BusRoute {
+  id               String   @id @default(cuid())
+  name             String
+  originHubId      String
+  originHub        Hub      @relation("RouteOriginHub", fields: [originHubId], references: [id], onDelete: Restrict)
+  destinationHubId String
+  destinationHub   Hub      @relation("RouteDestinationHub", fields: [destinationHubId], references: [id], onDelete: Restrict)
+  distanceKm       Float?
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  trips BusTrip[]
+
+  @@index([originHubId, destinationHubId])
+}
+
+model BusTrip {
+  id         String    @id @default(cuid())
+  busRouteId String
+  busRoute   BusRoute  @relation(fields: [busRouteId], references: [id], onDelete: Restrict)
+  manifestId String?
+  manifest   Manifest? @relation(fields: [manifestId], references: [id], onDelete: SetNull)
+
+  status         String    @default("SCHEDULED")
+  scheduledStart DateTime?
+  scheduledEnd   DateTime?
+  departedAt     DateTime?
+  arrivedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders Order[]
+
+  @@index([busRouteId])
+}
+
+model ReturnOrder {
+  id              String   @id @default(cuid())
+  originalOrderId String   @unique
+  originalOrder   Order    @relation(fields: [originalOrderId], references: [id], onDelete: Cascade)
+  reason          String?
+  status          String   @default("REQUESTED")
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// Zone-based pricing; bus/truck modifiers applied in service layer from orderType.
+model HubZonePricing {
+  id         String     @id @default(cuid())
+  hubId      String
+  hub        Hub        @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  hubZoneId  String?
+  hubZone    HubZone?   @relation(fields: [hubZoneId], references: [id], onDelete: SetNull)
+  zoneCode   String
+  minLat     Float?
+  maxLat     Float?
+  minLng     Float?
+  maxLng     Float?
+  baseCents  Int
+  perKmCents Int?
+  orderType  OrderType?
+  /// Multiplier for bus parcel (e.g. 0.85); truckload may use separate quote endpoint
+  busParcelMultiplier  Float? @default(1.0)
+  truckloadFlatCents   Int?
+  active     Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([hubId, zoneCode])
+  @@index([hubId, active])
+}
+
+/// JSON rules for surge / weight / time windows (evaluated in pricing service).
+model PricingRule {
+  id          String     @id @default(cuid())
+  hubId       String?
+  hub         Hub?       @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  name        String
+  orderType   OrderType?
+  rule        Json
+  priority    Int        @default(0)
+  active      Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([hubId, active, priority])
+}
+
+model Wallet {
+  id           String   @id @default(cuid())
+  sellerId     String   @unique
+  seller       Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  balanceCents Int      @default(0)
+  currency     String   @default("INR")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model TruckBooking {
+  id         String   @id @default(cuid())
+  sellerId   String
+  seller     Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  status     String   @default("REQUESTED")
+  truckType  String?
+  sourceLat  Float
+  sourceLng  Float
+  destLat    Float
+  destLng    Float
+  notes      String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([sellerId, status])
+}
+
+enum StoreProvider {
+  SHOPIFY
+  WOOCOMMERCE
+}
+
+enum IntegrationJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  DEAD
+}
+
+/// Programmatic / partner access (rate-limited per key).
+model ApiKey {
+  id                   String   @id @default(cuid())
+  sellerId             String
+  seller               Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  keyHash              String   @unique
+  label                String
+  scopes               String[] @default([])
+  rateLimitPerMinute   Int      @default(120)
+  active               Boolean  @default(true)
+  lastUsedAt           DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  auditLogs AuditLog[]
+
+  @@index([sellerId])
+}
+
+/// Shopify / WooCommerce storefronts are modeled as `ConnectedStore` (provider enum).
+/// Use `StoreProvider.SHOPIFY` / `WOOCOMMERCE` for ecommerce integration rows.
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorUserId  String?
+  actorUser    User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  apiKeyId     String?
+  apiKey       ApiKey?  @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  action       String
+  resource     String
+  resourceId   String?
+  metadata     Json?
+  ip           String?
+  createdAt    DateTime @default(now())
+
+  @@index([resource, resourceId])
+  @@index([createdAt])
+}
+
+/// Seller-configured outbound webhooks (order.created, etc.).
+model SellerWebhookSubscription {
+  id        String   @id @default(cuid())
+  sellerId  String
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  url       String
+  secret    String
+  events    String[]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sellerId, active])
+}
+
+model ConnectedStore {
+  id          String        @id @default(cuid())
+  sellerId    String
+  seller      Seller        @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  provider    StoreProvider
+  /// Shopify: shop domain (e.g. myshop.myshopify.com). Woo: site origin URL.
+  externalId  String
+  displayName String?
+  accessToken String?
+  /// WooCommerce keys, Shopify extra metadata, etc.
+  credentialsJson Json?
+  webhookSecret   String?
+  syncCursor      String?
+  lastSyncAt      DateTime?
+  lastSyncStatus  String?
+  status          String   @default("ACTIVE")
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  links          EcommerceOrderLink[]
+  integrationJobs IntegrationJob[]
+
+  @@unique([sellerId, provider, externalId])
+  @@index([sellerId])
+}
+
+model EcommerceOrderLink {
+  id               String         @id @default(cuid())
+  orderId          String
+  order            Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  storeId          String
+  store            ConnectedStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  externalOrderId  String
+  externalOrderNumber String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([storeId, externalOrderId])
+  @@index([orderId])
+}
+
+model IntegrationJob {
+  id          String                @id @default(cuid())
+  type        String
+  payload     Json
+  status      IntegrationJobStatus  @default(PENDING)
+  attempts    Int                   @default(0)
+  maxAttempts Int                   @default(8)
+  runAfter    DateTime              @default(now())
+  lastError   String?
+  sellerId    String?
+  seller      Seller?               @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  storeId     String?
+  store       ConnectedStore?       @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([status, runAfter])
+  @@index([type, status])
+}
+
+model WebhookDeliveryLog {
+  id             String   @id @default(cuid())
+  subscriptionId String?
+  event          String
+  url            String
+  statusCode     Int?
+  attempt        Int      @default(1)
+  error          String?
+  createdAt      DateTime @default(now())
+
+  @@index([event, createdAt])
+}
