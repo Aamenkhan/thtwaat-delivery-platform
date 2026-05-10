@@ -28,6 +28,16 @@ This monolith API (`apps/api`) serves REST on HTTP and Socket.IO on the **same**
 | `SOCKET_REQUIRE_AUTH` | `1` to require JWT on Socket.IO handshake |
 | `OTP_PEPPER` | Strong secret for OTP hashing |
 | `WEBHOOK_SIGNING_SECRET` | For outbound webhooks |
+| `WHATSAPP_ACCESS_TOKEN` | Meta WhatsApp Cloud API user token (optional; without it WhatsApp jobs no-op) |
+| `WHATSAPP_PHONE_NUMBER_ID` | Meta *Phone number ID* for sending |
+| `WHATSAPP_GRAPH_API_VERSION` | Optional API version segment (default `v20.0`) |
+| `RAZORPAY_KEY_ID` | `rzp_test_…` or `rzp_live_…` (Dashboard → API Keys) |
+| `RAZORPAY_KEY_SECRET` | Secret key for server-side order creation and signature verification |
+| `RAZORPAY_WEBHOOK_SECRET` | Webhook signing secret from Razorpay Dashboard (path `/v1/integrations/razorpay/webhook`) |
+
+After changing Prisma models for payments, run migrations (or `prisma db push` in dev) so `RazorpayPayment`, `SellerSubscription`, and `Order.shippingPaidAt` exist.
+
+Customer WhatsApp messages are queued as `IntegrationJob` rows (`WHATSAPP_NOTIFY`) and processed by the **integration worker** (`pnpm --filter @repo/api run worker:integrations` or `node apps/api/dist/integration-worker.js`). Ensure that worker runs in production alongside the API.
 
 ### Next.js (Vercel, each app)
 
@@ -35,8 +45,9 @@ This monolith API (`apps/api`) serves REST on HTTP and Socket.IO on the **same**
 |----------|---------|
 | `NEXT_PUBLIC_API_URL` | Public HTTPS URL of the Railway API |
 | `NEXT_PUBLIC_SOCKET_URL` | Same as API if Socket.IO is colocated (default) |
+| `NEXT_PUBLIC_RAZORPAY_KEY_ID` | Same publishable Key ID as `RAZORPAY_KEY_ID` so Checkout.js can open (test: `rzp_test_…`) |
 
-Do **not** expose `JWT_SECRET` or `DATABASE_URL` to the browser.
+Do **not** expose `JWT_SECRET`, `DATABASE_URL`, or `RAZORPAY_KEY_SECRET` to the browser.
 
 ## Vercel (Next.js)
 
@@ -75,6 +86,12 @@ The seed script only creates hubs and pricing by default; it does **not** create
 `DEMO_SEED_EMAIL=you@example.com DEMO_SEED_PASSWORD='…' pnpm --filter @repo/db run seed`
 
 Unset those variables after the first run so the password is not kept in shell history longer than needed. Re-running with the same email only updates the password hash.
+
+**Option D — seed a worker account (worker-web on Vercel):** after hubs exist in the DB (seed has already created **Bangalore City Hub** as `BLR_CC`), run once with a strong password, then unset:
+
+`WORKER_SEED_EMAIL=worker@yourdomain.com WORKER_SEED_PASSWORD='…' pnpm --filter @repo/db run seed`
+
+Optional: `WORKER_SEED_HUB_CODE=BLR_CC` (default), `WORKER_SEED_DISPLAY_NAME`, `WORKER_SEED_PHONE`. This creates or updates the user with `Role.WORKER`, bcrypt-hashes the password, links a `Worker` row with `isActive=true` and `homeHubId` set to that hub. Apply the Prisma migration that adds `Worker.homeHubId` before relying on hub assignment.
 
 ## Database
 
