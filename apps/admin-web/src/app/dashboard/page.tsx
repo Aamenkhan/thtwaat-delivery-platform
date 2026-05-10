@@ -2,11 +2,10 @@
 
 import { DailyOrdersChart, HubVolumeChart, OrdersByStatusChart } from '../../components/admin-charts'
 import { formatInrFromMinorUnits } from '../../lib/format'
-import { apiFetch, logoutRequest } from '@repo/web-core/api'
+import { apiFetch } from '@repo/web-core/api'
 import { createRealtimeSocket, subscribeOrderStatus } from '@repo/web-core/socket'
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@repo/ui'
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader } from '@repo/ui'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
@@ -36,7 +35,6 @@ type ShipmentRow = {
 }
 
 export default function AdminDashboardHome() {
-  const router = useRouter()
   const [live, setLive] = useState<string | null>(null)
 
   const logistics = useQuery({
@@ -102,27 +100,14 @@ export default function AdminDashboardHome() {
     }))
   }, [logistics.data])
 
-  async function logout() {
-    await logoutRequest()
-    router.replace('/login')
-    router.refresh()
-  }
-
   const s = ops.data?.data.summary
 
   return (
     <div className="flex flex-col gap-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Operations dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Network logistics, shipments, analytics, and realtime updates (first recent order).
-          </p>
-        </div>
-        <Button variant="outline" type="button" onClick={() => void logout()}>
-          Log out
-        </Button>
-      </header>
+      <PageHeader
+        title="Operations dashboard"
+        description="Network logistics, shipments, analytics, and realtime updates (first recent order)."
+      />
 
       {live ? (
         <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">{live}</p>
