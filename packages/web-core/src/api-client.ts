@@ -184,6 +184,49 @@ export async function apiFetch<T>(
   return parsed as T
 }
 
+export async function registerRequest(input: {
+  email: string
+  password: string
+  phone?: string
+  companyName?: string
+  fullName?: string
+}): Promise<{
+  user: { id: string; email: string; role: string }
+  accessToken: string
+  refreshToken: string
+  organizationId?: string | null
+  membershipRole?: string | null
+}> {
+  const base = getApiBaseUrl()
+  const res = await fetch(`${base}/v1/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...input,
+      role: 'SELLER',
+    }),
+  })
+  const parsed = (await parseBody(res)) as {
+    ok?: boolean
+    data?: {
+      user: { id: string; email: string; role: string }
+      accessToken: string
+      refreshToken: string
+      organizationId?: string | null
+      membershipRole?: string | null
+    }
+  }
+  if (!res.ok || !parsed?.data?.accessToken || !parsed?.data?.refreshToken) {
+    throw new ApiError(res.status, parsed)
+  }
+  writeTokens({
+    accessToken: parsed.data.accessToken,
+    refreshToken: parsed.data.refreshToken,
+  })
+  writeUser(parsed.data.user)
+  return parsed.data
+}
+
 export async function loginRequest(input: {
   email: string
   password: string

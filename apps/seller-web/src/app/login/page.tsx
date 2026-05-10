@@ -111,6 +111,11 @@ export default function LoginPage() {
         <Button variant="outline" className="mt-4 w-full" asChild>
           <Link href="/dashboard">Dashboard (agar pehle se login ho)</Link>
         </Button>
+        <p className="mt-4 text-center text-sm">
+          <Link href="/register" className="text-primary underline">
+            Naya seller account? Register karein
+          </Link>
+        </p>
       </div>
       {adminHref && workerHref ? (
         <p className="text-center text-xs text-muted-foreground">

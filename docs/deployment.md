@@ -64,9 +64,11 @@ Each Next app ships a committed **`.env.production`** pointing at the shared API
 
 The seed script only creates hubs and pricing by default; it does **not** create users unless you opt in. If `POST /v1/auth/login` returns **401 Invalid credentials**, the email is missing in the production database or the password does not match.
 
-**Option A — register via API:** call `POST https://<your-api>/v1/auth/register` with a JSON body matching `registerBody` (seller role, email, password, etc.) once, then use the same credentials in the seller app.
+**Option A — seller UI:** open **`/register`** on the seller Next app (e.g. `https://…vercel.app/register`), create an account (password ≥ 8 characters), then use the same email on **Login**.
 
-**Option B — seed a demo seller (one-off):** with `DATABASE_URL` pointing at production, run:
+**Option B — register via API:** `POST https://<your-api>/v1/auth/register` with JSON matching `registerBody` and `"role":"SELLER"`.
+
+**Option C — seed a demo seller (one-off):** with `DATABASE_URL` pointing at production, run:
 
 `DEMO_SEED_EMAIL=you@example.com DEMO_SEED_PASSWORD='…' pnpm --filter @repo/db run seed`
 
