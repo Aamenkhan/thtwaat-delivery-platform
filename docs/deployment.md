@@ -47,11 +47,13 @@ Do **not** expose `JWT_SECRET` or `DATABASE_URL` to the browser.
 
 Repeat per app with different root directories or use a single Vercel monorepo with multiple projects.
 
-## Railway (API)
+## Railway / Render (API)
+
+Use the **repository root** as the service root so `pnpm` workspaces resolve. The `@repo/api` **build** script runs `prisma generate` before `tsc`, so you do not need a separate generate step unless you prefer one.
 
 1. New service from repo; **build** with something like:  
-   `pnpm install && pnpm db:generate && pnpm --filter @repo/api run build`
-2. **Start**: `node apps/api/dist/server.js` (adjust paths to your build output).
+   `corepack enable && corepack prepare pnpm@9.15.0 --activate && pnpm install --frozen-lockfile && pnpm --filter @repo/api run build`
+2. **Start**: `pnpm --filter @repo/api start` (or `node apps/api/dist/server.js` from repo root).
 3. Attach **PostgreSQL** plugin and copy connection string into `DATABASE_URL`.
 4. Run migrations: `pnpm db:migrate` or `prisma migrate deploy` in CI against production.
 
