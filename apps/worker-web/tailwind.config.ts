@@ -6,6 +6,9 @@ const config: Config = {
   content: ['./src/**/*.{ts,tsx}', '../../packages/ui/src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['var(--font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+      },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',

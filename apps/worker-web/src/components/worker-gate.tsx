@@ -1,7 +1,7 @@
 'use client'
 
+import { Skeleton } from '@repo/ui'
 import { readTokens, readUser } from '@repo/web-core/auth-storage'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
@@ -28,36 +28,14 @@ export function WorkerAuthGate({ children }: { children: ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
-        Loading…
+      <div className="mx-auto flex min-h-[50vh] w-full max-w-lg flex-col justify-center gap-3 p-6">
+        <Skeleton className="h-8 w-40 rounded-lg" />
+        <Skeleton className="h-24 w-full rounded-2xl" />
+        <Skeleton className="h-24 w-full rounded-2xl" />
+        <p className="text-center text-xs text-muted-foreground">Securing session…</p>
       </div>
     )
   }
 
   return <>{children}</>
-}
-
-export function WorkerNav() {
-  return (
-    <nav className="flex flex-wrap gap-3 border-b bg-card px-4 py-3 text-sm">
-      <Link href="/dashboard" className="font-semibold">
-        Worker
-      </Link>
-      <Link href="/dashboard/routes" className="text-muted-foreground hover:text-foreground">
-        My routes
-      </Link>
-      <Link href="/dashboard/scan" className="text-muted-foreground hover:text-foreground">
-        Scan QR
-      </Link>
-      <Link href="/dashboard/otp" className="text-muted-foreground hover:text-foreground">
-        OTP
-      </Link>
-      <Link href="/dashboard/photo" className="text-muted-foreground hover:text-foreground">
-        Proof photo
-      </Link>
-      <Link href="/dashboard/gps" className="text-muted-foreground hover:text-foreground">
-        GPS ping
-      </Link>
-    </nav>
-  )
 }

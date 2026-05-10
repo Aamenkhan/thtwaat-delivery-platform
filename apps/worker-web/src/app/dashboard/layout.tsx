@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react'
 
-import { WorkerAuthGate, WorkerNav } from '../../components/worker-gate'
+import { WorkerAuthGate } from '../../components/worker-gate'
+import { WorkerShell } from '../../components/worker-shell'
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <WorkerAuthGate>
-      <WorkerNav />
-      <div className="mx-auto max-w-lg space-y-6 p-4">{children}</div>
+      <WorkerShell>
+        <div className="mx-auto w-full max-w-lg space-y-6 pb-4">{children}</div>
+      </WorkerShell>
     </WorkerAuthGate>
   )
 }
