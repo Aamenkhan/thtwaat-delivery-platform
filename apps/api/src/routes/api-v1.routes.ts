@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import { Router, type RequestHandler } from 'express'
 import { requireApiKey } from '../middleware/api-key.js'
 import { apiKeyRateLimiter } from '../middleware/api-key-rate-limit.js'
 import { validateBody } from '../middleware/validate.js'
@@ -37,75 +37,84 @@ const r = Router()
 r.use(commercialPartnerRouter)
 r.use(apiOrdersRouter)
 
+const postReturns: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.apiKeyAuth) throw new HttpError(401, 'Unauthorized')
+    const order = await prisma.order.findFirst({
+      where: { publicId: req.body.publicId, sellerId: req.apiKeyAuth.sellerId },
+    })
+    if (!order) throw new HttpError(404, 'Order not found')
+    const updated = await orderService.requestReturn(req.body.publicId, {
+      reason: req.body.reason,
+    })
+    res.json({ ok: true, data: { order: updated } })
+  } catch (e) {
+    next(e)
+  }
+}
+
 r.post(
   '/returns',
   requireApiKey('orders:write'),
   apiKeyRateLimiter(),
   validateBody(returnBody),
-  async (req, res, next) => {
-    try {
-      if (!req.apiKeyAuth) throw new HttpError(401, 'Unauthorized')
-      const order = await prisma.order.findFirst({
-        where: { publicId: req.body.publicId, sellerId: req.apiKeyAuth.sellerId },
-      })
-      if (!order) throw new HttpError(404, 'Order not found')
-      const updated = await orderService.requestReturn(req.body.publicId, {
-        reason: req.body.reason,
-      })
-      res.json({ ok: true, data: { order: updated } })
-    } catch (e) {
-      next(e)
-    }
-  }
+  postReturns
 )
+
+const postWebhooks: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.apiKeyAuth) throw new HttpError(401, 'Unauthorized')
+    const sub = await prisma.sellerWebhookSubscription.create({
+      data: {
+        sellerId: req.apiKeyAuth.sellerId,
+        url: req.body.url,
+        secret: req.body.secret,
+        events: req.body.events,
+      },
+    })
+    res.status(201).json({
+      ok: true,
+      data: { subscription: { id: sub.id, url: sub.url, events: sub.events } },
+    })
+  } catch (e) {
+    next(e)
+  }
+}
 
 r.post(
   '/webhooks',
   requireApiKey('webhooks:write'),
   apiKeyRateLimiter(),
   validateBody(webhookRegisterBody),
-  async (req, res, next) => {
-    try {
-      if (!req.apiKeyAuth) throw new HttpError(401, 'Unauthorized')
-      const sub = await prisma.sellerWebhookSubscription.create({
-        data: {
-          sellerId: req.apiKeyAuth.sellerId,
-          url: req.body.url,
-          secret: req.body.secret,
-          events: req.body.events,
-        },
-      })
-      res.status(201).json({ ok: true, data: { subscription: { id: sub.id, url: sub.url, events: sub.events } } })
-    } catch (e) {
-      next(e)
-    }
-  }
+  postWebhooks
 )
+
+const postTransportBook: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.apiKeyAuth) throw new HttpError(401, 'Unauthorized')
+    const booking = await prisma.truckBooking.create({
+      data: {
+        sellerId: req.apiKeyAuth.sellerId,
+        truckType: req.body.truckType,
+        sourceLat: req.body.sourceLat,
+        sourceLng: req.body.sourceLng,
+        destLat: req.body.destLat,
+        destLng: req.body.destLng,
+        notes: req.body.notes,
+      },
+    })
+    res.status(201).json({ ok: true, data: { booking } })
+  } catch (e) {
+    next(e)
+  }
+}
 
 r.post(
   '/transport/book',
   requireApiKey('transport:write'),
   apiKeyRateLimiter(),
   validateBody(truckBookBody),
-  async (req, res, next) => {
-    try {
-      if (!req.apiKeyAuth) throw new HttpError(401, 'Unauthorized')
-      const booking = await prisma.truckBooking.create({
-        data: {
-          sellerId: req.apiKeyAuth.sellerId,
-          truckType: req.body.truckType,
-          sourceLat: req.body.sourceLat,
-          sourceLng: req.body.sourceLng,
-          destLat: req.body.destLat,
-          destLng: req.body.destLng,
-          notes: req.body.notes,
-        },
-      })
-      res.status(201).json({ ok: true, data: { booking } })
-    } catch (e) {
-      next(e)
-    }
-  }
+  postTransportBook
 )
 
 export const apiV1Router = r
