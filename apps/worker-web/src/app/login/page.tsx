@@ -1,6 +1,7 @@
 'use client'
 
-import { ApiError, getApiBaseUrl, loginRequest } from '@repo/web-core/api'
+import { GoogleLogin } from '@react-oauth/google'
+import { ApiError, getApiBaseUrl, googleLoginRequest, loginRequest } from '@repo/web-core/api'
 import { Button } from '@repo/ui'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -32,6 +33,29 @@ export default function WorkerLoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const hasGoogleClientId = !!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+
+  async function handleGoogleSuccess(credential: string) {
+    setLoading(true)
+    setMessage(null)
+    try {
+      const data = await googleLoginRequest(credential)
+      if (!['WORKER', 'DELIVERY_WORKER'].includes(data.user.role)) {
+        setMessage('Seller ya admin app use karein.')
+        return
+      }
+      router.replace('/dashboard')
+      router.refresh()
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setMessage(e.message)
+      } else {
+        setMessage('API connect nahi ho raha — network / CORS check karein.')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -102,6 +126,26 @@ export default function WorkerLoginPage() {
             {loading ? '…' : 'Sign in'}
           </Button>
         </form>
+        {hasGoogleClientId ? (
+          <>
+            <div className="relative my-4 flex items-center">
+              <div className="flex-1 border-t border-border" />
+              <span className="mx-3 text-xs text-muted-foreground">or</span>
+              <div className="flex-1 border-t border-border" />
+            </div>
+            <div className="flex justify-center">
+              <GoogleLogin
+                onSuccess={(resp) => {
+                  if (resp.credential) handleGoogleSuccess(resp.credential)
+                }}
+                onError={() => setMessage('Google sign-in failed.')}
+                theme="outline"
+                size="large"
+                text="signin_with"
+              />
+            </div>
+          </>
+        ) : null}
         <Button variant="outline" className="mt-4 w-full" asChild>
           <Link href="/dashboard">Dashboard</Link>
         </Button>

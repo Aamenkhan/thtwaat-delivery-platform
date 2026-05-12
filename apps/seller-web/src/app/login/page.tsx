@@ -1,6 +1,7 @@
 'use client'
 
-import { ApiError, getApiBaseUrl, loginRequest } from '@repo/web-core/api'
+import { GoogleLogin } from '@react-oauth/google'
+import { ApiError, getApiBaseUrl, googleLoginRequest, loginRequest } from '@repo/web-core/api'
 import { Button } from '@repo/ui'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -32,6 +33,29 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const hasGoogleClientId = !!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+
+  async function handleGoogleSuccess(credential: string) {
+    setLoading(true)
+    setMessage(null)
+    try {
+      const data = await googleLoginRequest(credential)
+      if (!['SELLER', 'HUB_MANAGER'].includes(data.user.role)) {
+        setMessage('Use the admin or worker app for this account.')
+        return
+      }
+      router.replace('/dashboard')
+      router.refresh()
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setMessage(e.message)
+      } else {
+        setMessage('Could not reach the API. Check your connection and CORS.')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -140,6 +164,27 @@ export default function LoginPage() {
               {loading ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
+
+          {hasGoogleClientId ? (
+            <>
+              <div className="relative my-4 flex items-center">
+                <div className="flex-1 border-t border-border" />
+                <span className="mx-3 text-xs text-muted-foreground">or</span>
+                <div className="flex-1 border-t border-border" />
+              </div>
+              <div className="flex justify-center">
+                <GoogleLogin
+                  onSuccess={(resp) => {
+                    if (resp.credential) handleGoogleSuccess(resp.credential)
+                  }}
+                  onError={() => setMessage('Google sign-in failed.')}
+                  theme="outline"
+                  size="large"
+                  text="signin_with"
+                />
+              </div>
+            </>
+          ) : null}
 
           <div className="mt-3 flex flex-col gap-2">
             <Button id="goto-seller-dashboard" variant="outline" className="h-10 w-full rounded-xl" asChild>

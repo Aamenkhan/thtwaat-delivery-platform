@@ -1,6 +1,7 @@
 'use client'
 
-import { ApiError, getApiBaseUrl, loginRequest } from '@repo/web-core/api'
+import { GoogleLogin } from '@react-oauth/google'
+import { ApiError, getApiBaseUrl, googleLoginRequest, loginRequest } from '@repo/web-core/api'
 import { Button } from '@repo/ui'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -32,6 +33,31 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const hasGoogleClientId = !!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+
+  async function handleGoogleSuccess(credential: string) {
+    setLoading(true)
+    setMessage(null)
+    try {
+      const data = await googleLoginRequest(credential)
+      if (!['ADMIN', 'SUPER_ADMIN'].includes(data.user.role)) {
+        setMessage('Is account ke liye seller ya worker app kholein.')
+        return
+      }
+      router.replace('/dashboard')
+      router.refresh()
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        setMessage('Google token invalid ya expired.')
+      } else if (e instanceof ApiError) {
+        setMessage(e.message)
+      } else {
+        setMessage('API tak nahi pahunch sakay — network / CORS check karein.')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -159,6 +185,28 @@ export default function AdminLoginPage() {
               )}
             </Button>
           </form>
+
+          {hasGoogleClientId ? (
+            <>
+              <div className="relative my-4 flex items-center">
+                <div className="flex-1 border-t border-border" />
+                <span className="mx-3 text-xs text-muted-foreground">or</span>
+                <div className="flex-1 border-t border-border" />
+              </div>
+              <div className="flex justify-center">
+                <GoogleLogin
+                  onSuccess={(resp) => {
+                    if (resp.credential) handleGoogleSuccess(resp.credential)
+                  }}
+                  onError={() => setMessage('Google sign-in failed.')}
+                  theme="outline"
+                  size="large"
+                  width="100%"
+                  text="signin_with"
+                />
+              </div>
+            </>
+          ) : null}
 
           <Button id="goto-dashboard" variant="outline" className="mt-3 h-10 w-full rounded-xl" asChild>
             <Link href="/dashboard">Go to dashboard (if session exists)</Link>

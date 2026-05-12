@@ -75,6 +75,16 @@ export const logout: RequestHandler = async (req, res, next) => {
   }
 }
 
+export const googleLogin: RequestHandler = async (req, res, next) => {
+  try {
+    const result = await authService.googleLogin(req.body.idToken, requestMeta(req))
+    setAuthCookies(res, result.accessToken, result.refreshToken)
+    res.json({ ok: true, data: result })
+  } catch (e) {
+    next(e)
+  }
+}
+
 export const switchOrg: RequestHandler = async (req, res, next) => {
   try {
     if (!req.auth) throw new HttpError(401, 'Unauthorized')

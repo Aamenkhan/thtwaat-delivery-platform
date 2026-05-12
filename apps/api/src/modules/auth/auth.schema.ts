@@ -23,6 +23,10 @@ export const switchOrgBody = z.object({
   organizationId: z.string().min(1),
 })
 
+export const googleLoginBody = z.object({
+  idToken: z.string().min(20),
+})
+
 export const logoutBody = z.object({
   refreshToken: z.string().min(20).optional(),
 })

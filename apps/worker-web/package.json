@@ -9,6 +9,7 @@
     "lint": "echo ok"
   },
   "dependencies": {
+    "@react-oauth/google": "^0.13.5",
     "@repo/ui": "workspace:*",
     "@repo/web-core": "workspace:*",
     "@tanstack/react-query": "^5.62.0",

@@ -5,6 +5,7 @@ import { requireAuth } from '../../middleware/auth.js'
 import {
   registerBody,
   loginBody,
+  googleLoginBody,
   refreshBody,
   logoutBody,
   switchOrgBody,
@@ -35,6 +36,7 @@ r.use(strictAuthLimiter)
 
 r.post('/register', validateBody(registerBody), ctrl.register)
 r.post('/login', loginLimiter, validateBody(loginBody), ctrl.login)
+r.post('/google', loginLimiter, validateBody(googleLoginBody), ctrl.googleLogin)
 r.post('/refresh', loginLimiter, validateBody(refreshBody), ctrl.refresh)
 r.post('/logout', validateBody(logoutBody), ctrl.logout)
 r.post(

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import bcrypt from 'bcryptjs'
+import { OAuth2Client } from 'google-auth-library'
 import {
   MembershipRole,
   Prisma,
@@ -307,6 +308,65 @@ export async function logout(refreshToken: string | undefined, meta: { ip?: stri
     ip: meta.ip,
   })
   return { ok: true as const }
+}
+
+export async function googleLogin(
+  idToken: string,
+  meta: { userAgent?: string; ip?: string }
+) {
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim()
+  if (!clientId) {
+    throw new HttpError(500, 'Google OAuth is not configured on this server')
+  }
+
+  const client = new OAuth2Client(clientId)
+  let payload: { email?: string | null; name?: string | null; sub?: string }
+  try {
+    const ticket = await client.verifyIdToken({ idToken, audience: clientId })
+    const p = ticket.getPayload()
+    if (!p) throw new Error('empty payload')
+    payload = { email: p.email, name: p.name, sub: p.sub }
+  } catch {
+    throw new HttpError(401, 'Invalid Google token')
+  }
+
+  const email = payload.email?.toLowerCase().trim()
+  if (!email) {
+    throw new HttpError(400, 'Google account has no email')
+  }
+
+  let user = await prisma.user.findFirst({ where: { email } })
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        email,
+        role: Role.CUSTOMER,
+      },
+    })
+    await writeAuditLog({
+      actorUserId: user.id,
+      action: 'auth.google_register',
+      resource: 'user',
+      resourceId: user.id,
+      metadata: { email, googleSub: payload.sub },
+      ip: meta.ip,
+    })
+  }
+
+  const tokens = await issueTokenPair(user, meta)
+  await writeAuditLog({
+    actorUserId: user.id,
+    action: 'auth.google_login',
+    resource: 'user',
+    resourceId: user.id,
+    metadata: { email, organizationId: tokens.organizationId },
+    ip: meta.ip,
+  })
+
+  return {
+    user: { id: user.id, email: user.email, role: user.role },
+    ...tokens,
+  }
 }
 
 export async function switchOrganization(

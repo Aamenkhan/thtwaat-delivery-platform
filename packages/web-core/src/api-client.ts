@@ -202,6 +202,7 @@ export async function registerRequest(input: {
   const res = await fetch(`${base}/v1/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({
       ...input,
       role: 'SELLER',
@@ -246,6 +247,7 @@ export async function loginRequest(input: {
   const res = await fetch(`${base}/v1/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(input),
   })
   const parsed = (await parseBody(res)) as {
@@ -265,6 +267,45 @@ export async function loginRequest(input: {
     writeTokens({
       accessToken: parsed.data.accessToken,
       refreshToken: parsed.data.refreshToken
+    })
+  }
+  if (parsed.data?.user) {
+    writeUser(parsed.data.user)
+  }
+  return parsed.data!
+}
+
+export async function googleLoginRequest(idToken: string): Promise<{
+  user: { id: string; email: string; role: string }
+  organizationId?: string | null
+  membershipRole?: string | null
+  accessToken?: string
+  refreshToken?: string
+}> {
+  const base = getApiBaseUrl()
+  const res = await fetch(`${base}/v1/auth/google`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ idToken }),
+  })
+  const parsed = (await parseBody(res)) as {
+    ok?: boolean
+    data?: {
+      user: { id: string; email: string; role: string }
+      organizationId?: string | null
+      membershipRole?: string | null
+      accessToken?: string
+      refreshToken?: string
+    }
+  }
+  if (!res.ok) {
+    throw new ApiError(res.status, parsed)
+  }
+  if (parsed.data?.accessToken && parsed.data?.refreshToken) {
+    writeTokens({
+      accessToken: parsed.data.accessToken,
+      refreshToken: parsed.data.refreshToken,
     })
   }
   if (parsed.data?.user) {
