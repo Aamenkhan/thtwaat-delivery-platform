@@ -1,7 +1,7 @@
 'use client'
 
 import { Skeleton } from '@repo/ui'
-import { readTokens, readUser } from '@repo/web-core/auth-storage'
+import { readUser } from '@repo/web-core/auth-storage'
 import { useRouter } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
@@ -13,9 +13,8 @@ export function AdminAuthGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    const tokens = readTokens()
     const user = readUser()
-    if (!tokens?.accessToken || !user) {
+    if (!user) {
       router.replace('/login')
       return
     }

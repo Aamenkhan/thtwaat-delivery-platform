@@ -7,6 +7,7 @@ function getBullConnection(): Redis | null {
   const url = process.env.REDIS_URL?.trim()
   if (!url) return null
   if (/^(disabled|off|none|skip|no)$/i.test(url)) return null
+  if (/^\/\/(disabled|off|none|skip|no)(:|$)/i.test(url.replace(/^redis:/, ''))) return null
   if (!connection) {
     connection = new Redis(url, { maxRetriesPerRequest: null })
   }

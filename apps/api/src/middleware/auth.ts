@@ -5,9 +5,11 @@ import { HttpError } from '../lib/http-error.js'
 
 export const requireAuth: RequestHandler = (req, _res, next) => {
   const header = req.headers.authorization
-  const token = header?.startsWith('Bearer ') ? header.slice(7) : null
+  const headerToken = header?.startsWith('Bearer ') ? header.slice(7) : null
+  const token = req.cookies?.thtwaat_access_token || headerToken
+  
   if (!token) {
-    next(new HttpError(401, 'Missing bearer token'))
+    next(new HttpError(401, 'Missing bearer token or cookie'))
     return
   }
   try {

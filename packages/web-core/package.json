@@ -11,7 +11,8 @@
     "./api": "./src/api-client.ts",
     "./auth-storage": "./src/auth-storage.ts",
     "./socket": "./src/socket-client.ts",
-    "./providers": "./src/providers.tsx"
+    "./providers": "./src/providers.tsx",
+    "./edge-auth": "./src/edge-auth.ts"
   },
   "peerDependencies": {
     "@tanstack/react-query": "^5.62.0",

@@ -1,8 +1,5 @@
 import {
-  readTokens,
-  writeTokens,
   writeUser,
-  type StoredTokens,
   type StoredUser,
 } from './auth-storage'
 
@@ -93,35 +90,26 @@ async function parseBody(res: Response): Promise<unknown> {
   }
 }
 
-export async function refreshSession(): Promise<StoredTokens | null> {
-  const tokens = readTokens()
-  if (!tokens?.refreshToken) return null
+export async function refreshSession(): Promise<boolean> {
   const base = getApiBaseUrl()
   const res = await fetch(`${base}/v1/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken: tokens.refreshToken }),
+    credentials: 'include'
   })
   const body = (await parseBody(res)) as {
     ok?: boolean
-    data?: StoredTokens & {
+    data?: {
       user?: unknown
-      accessToken: string
-      refreshToken: string
     }
   }
-  if (!res.ok || !body?.data?.accessToken || !body?.data?.refreshToken) {
-    writeTokens(null)
+  if (!res.ok) {
     writeUser(null)
-    return null
+    return false
   }
-  const next: StoredTokens = {
-    accessToken: body.data.accessToken,
-    refreshToken: body.data.refreshToken,
-  }
-  writeTokens(next)
-  if (body.data.user) writeUser(body.data.user as StoredUser)
-  return next
+  
+  if (body.data?.user) writeUser(body.data.user as StoredUser)
+  return true
 }
 
 export type ApiFetchOptions = Omit<RequestInit, 'body'> & {
@@ -141,11 +129,6 @@ export async function apiFetch<T>(
   const { anonymous, rawBody, headers: hdrs, body, ...rest } = options
   const headers = new Headers(hdrs)
 
-  let access = anonymous ? null : readTokens()?.accessToken
-  if (!anonymous && access) {
-    headers.set('Authorization', `Bearer ${access}`)
-  }
-
   const isJson =
     body !== undefined &&
     body !== null &&
@@ -161,6 +144,7 @@ export async function apiFetch<T>(
   const init: RequestInit = {
     ...rest,
     headers,
+    credentials: 'include',
     body:
       rawBody !== undefined ? rawBody
       : isJson ? JSON.stringify(body)
@@ -169,11 +153,10 @@ export async function apiFetch<T>(
 
   let res = await fetch(`${base}${path}`, init)
 
-  if (res.status === 401 && !anonymous && readTokens()?.refreshToken) {
+  if (res.status === 401 && !anonymous) {
     const refreshed = await refreshSession()
-    if (refreshed?.accessToken) {
-      headers.set('Authorization', `Bearer ${refreshed.accessToken}`)
-      res = await fetch(`${base}${path}`, { ...init, headers })
+    if (refreshed) {
+      res = await fetch(`${base}${path}`, init)
     }
   }
 
@@ -210,21 +193,17 @@ export async function registerRequest(input: {
     ok?: boolean
     data?: {
       user: { id: string; email: string; role: string }
-      accessToken: string
-      refreshToken: string
       organizationId?: string | null
       membershipRole?: string | null
     }
   }
-  if (!res.ok || !parsed?.data?.accessToken || !parsed?.data?.refreshToken) {
+  if (!res.ok) {
     throw new ApiError(res.status, parsed)
   }
-  writeTokens({
-    accessToken: parsed.data.accessToken,
-    refreshToken: parsed.data.refreshToken,
-  })
-  writeUser(parsed.data.user)
-  return parsed.data
+  if (parsed.data?.user) {
+    writeUser(parsed.data.user)
+  }
+  return parsed.data!
 }
 
 export async function loginRequest(input: {
@@ -247,34 +226,26 @@ export async function loginRequest(input: {
     ok?: boolean
     data?: {
       user: { id: string; email: string; role: string }
-      accessToken: string
-      refreshToken: string
       organizationId?: string | null
       membershipRole?: string | null
     }
   }
-  if (!res.ok || !parsed?.data?.accessToken || !parsed?.data?.refreshToken) {
+  if (!res.ok) {
     throw new ApiError(res.status, parsed)
   }
-  writeTokens({
-    accessToken: parsed.data.accessToken,
-    refreshToken: parsed.data.refreshToken,
-  })
-  writeUser(parsed.data.user)
-  return parsed.data
+  if (parsed.data?.user) {
+    writeUser(parsed.data.user)
+  }
+  return parsed.data!
 }
 
 export async function logoutRequest(): Promise<void> {
-  const t = readTokens()
-  const refresh = t?.refreshToken
-  writeTokens(null)
   writeUser(null)
-  if (!refresh) return
   try {
     await fetch(`${getApiBaseUrl()}/v1/auth/logout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: refresh }),
+      credentials: 'include'
     })
   } catch {
     /* best-effort */

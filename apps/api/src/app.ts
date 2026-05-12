@@ -1,5 +1,7 @@
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
+import cookieParser from 'cookie-parser'
 import { resolveCorsOrigin } from './lib/cors-origins.js'
 import { authRouter } from './modules/auth/auth.routes.js'
 import { orderRouter } from './modules/order/order.routes.js'
@@ -47,6 +49,8 @@ export function createApp() {
       credentials: true,
     })
   )
+  app.use(helmet())
+  app.use(cookieParser())
 
   app.use(
     '/v1/integrations/shopify/webhooks',
