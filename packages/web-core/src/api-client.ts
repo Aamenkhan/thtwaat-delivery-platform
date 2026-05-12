@@ -1,5 +1,8 @@
 import {
   writeUser,
+  readTokens,
+  writeTokens,
+  clearTokens,
   type StoredUser,
 } from './auth-storage'
 
@@ -101,11 +104,21 @@ export async function refreshSession(): Promise<boolean> {
     ok?: boolean
     data?: {
       user?: unknown
+      accessToken?: string
+      refreshToken?: string
     }
   }
   if (!res.ok) {
+    clearTokens()
     writeUser(null)
     return false
+  }
+  
+  if (body.data?.accessToken && body.data?.refreshToken) {
+    writeTokens({
+      accessToken: body.data.accessToken,
+      refreshToken: body.data.refreshToken
+    })
   }
   
   if (body.data?.user) writeUser(body.data.user as StoredUser)
@@ -128,6 +141,11 @@ export async function apiFetch<T>(
   const base = getApiBaseUrl()
   const { anonymous, rawBody, headers: hdrs, body, ...rest } = options
   const headers = new Headers(hdrs)
+
+  const tokens = readTokens()
+  if (!anonymous && tokens?.accessToken) {
+    headers.set('Authorization', `Bearer ${tokens.accessToken}`)
+  }
 
   const isJson =
     body !== undefined &&
@@ -177,6 +195,8 @@ export async function registerRequest(input: {
   user: { id: string; email: string; role: string }
   organizationId?: string | null
   membershipRole?: string | null
+  accessToken?: string
+  refreshToken?: string
 }> {
   const base = getApiBaseUrl()
   const res = await fetch(`${base}/v1/auth/register`, {
@@ -193,10 +213,18 @@ export async function registerRequest(input: {
       user: { id: string; email: string; role: string }
       organizationId?: string | null
       membershipRole?: string | null
+      accessToken?: string
+      refreshToken?: string
     }
   }
   if (!res.ok) {
     throw new ApiError(res.status, parsed)
+  }
+  if (parsed.data?.accessToken && parsed.data?.refreshToken) {
+    writeTokens({
+      accessToken: parsed.data.accessToken,
+      refreshToken: parsed.data.refreshToken
+    })
   }
   if (parsed.data?.user) {
     writeUser(parsed.data.user)
@@ -211,6 +239,8 @@ export async function loginRequest(input: {
   user: { id: string; email: string; role: string }
   organizationId?: string | null
   membershipRole?: string | null
+  accessToken?: string
+  refreshToken?: string
 }> {
   const base = getApiBaseUrl()
   const res = await fetch(`${base}/v1/auth/login`, {
@@ -224,10 +254,18 @@ export async function loginRequest(input: {
       user: { id: string; email: string; role: string }
       organizationId?: string | null
       membershipRole?: string | null
+      accessToken?: string
+      refreshToken?: string
     }
   }
   if (!res.ok) {
     throw new ApiError(res.status, parsed)
+  }
+  if (parsed.data?.accessToken && parsed.data?.refreshToken) {
+    writeTokens({
+      accessToken: parsed.data.accessToken,
+      refreshToken: parsed.data.refreshToken
+    })
   }
   if (parsed.data?.user) {
     writeUser(parsed.data.user)
@@ -236,7 +274,7 @@ export async function loginRequest(input: {
 }
 
 export async function logoutRequest(): Promise<void> {
-  writeUser(null)
+  clearTokens()
   try {
     await fetch(`${getApiBaseUrl()}/v1/auth/logout`, {
       method: 'POST',
