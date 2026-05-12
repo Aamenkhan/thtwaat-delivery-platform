@@ -175,8 +175,6 @@ export async function registerRequest(input: {
   fullName?: string
 }): Promise<{
   user: { id: string; email: string; role: string }
-  accessToken: string
-  refreshToken: string
   organizationId?: string | null
   membershipRole?: string | null
 }> {
@@ -211,8 +209,6 @@ export async function loginRequest(input: {
   password: string
 }): Promise<{
   user: { id: string; email: string; role: string }
-  accessToken: string
-  refreshToken: string
   organizationId?: string | null
   membershipRole?: string | null
 }> {
