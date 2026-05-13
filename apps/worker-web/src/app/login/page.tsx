@@ -2,6 +2,7 @@
 
 import { GoogleLogin } from '@react-oauth/google'
 import { ApiError, getApiBaseUrl, googleLoginRequest, loginRequest } from '@repo/web-core/api'
+import { clearTokens } from '@repo/web-core/auth-storage'
 import { Button } from '@repo/ui'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -41,6 +42,7 @@ export default function WorkerLoginPage() {
     try {
       const data = await googleLoginRequest(credential)
       if (!['WORKER', 'DELIVERY_WORKER'].includes(data.user.role)) {
+        clearTokens()
         setMessage('Seller ya admin app use karein.')
         return
       }
@@ -64,6 +66,7 @@ export default function WorkerLoginPage() {
     try {
       const data = await loginRequest({ email, password })
       if (!['WORKER', 'DELIVERY_WORKER'].includes(data.user.role)) {
+        clearTokens()
         setMessage('Seller ya admin app use karein.')
         return
       }

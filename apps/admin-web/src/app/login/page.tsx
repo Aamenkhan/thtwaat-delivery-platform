@@ -2,6 +2,7 @@
 
 import { GoogleLogin } from '@react-oauth/google'
 import { ApiError, getApiBaseUrl, googleLoginRequest, loginRequest } from '@repo/web-core/api'
+import { clearTokens } from '@repo/web-core/auth-storage'
 import { Button } from '@repo/ui'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -41,7 +42,10 @@ export default function AdminLoginPage() {
     try {
       const data = await googleLoginRequest(credential)
       if (!['ADMIN', 'SUPER_ADMIN'].includes(data.user.role)) {
-        setMessage('Is account ke liye seller ya worker app kholein.')
+        clearTokens()
+        setMessage(
+          'Is Google account par admin access nahi — seller/worker portal use karein, ya DB mein role ADMIN set karwaein.'
+        )
         return
       }
       router.replace('/dashboard')
@@ -66,6 +70,7 @@ export default function AdminLoginPage() {
     try {
       const data = await loginRequest({ email, password })
       if (!['ADMIN', 'SUPER_ADMIN'].includes(data.user.role)) {
+        clearTokens()
         setMessage('Is account ke liye seller ya worker app kholein.')
         return
       }
@@ -125,6 +130,12 @@ export default function AdminLoginPage() {
             <div className="mb-4 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
               <span className="text-base">⚠</span>
               Yahan sirf ADMIN / SUPER_ADMIN.
+            </div>
+          ) : null}
+          {err === 'unauthorized' ? (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+              <span className="text-base">⚠</span>
+              Session invalid — dubara sign in karein.
             </div>
           ) : null}
           {message ? (

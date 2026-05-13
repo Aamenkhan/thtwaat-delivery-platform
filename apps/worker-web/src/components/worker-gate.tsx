@@ -1,7 +1,7 @@
 'use client'
 
 import { Skeleton } from '@repo/ui'
-import { readUser } from '@repo/web-core/auth-storage'
+import { clearTokens, readTokens, readUser } from '@repo/web-core/auth-storage'
 import { useRouter } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
@@ -14,11 +14,14 @@ export function WorkerAuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const user = readUser()
-    if (!user) {
+    const tokens = readTokens()
+    if (!user?.email || !tokens?.accessToken) {
+      clearTokens()
       router.replace('/login')
       return
     }
     if (!WORKER_ROLES.has(user.role)) {
+      clearTokens()
       router.replace('/login?error=wrong_role')
       return
     }
