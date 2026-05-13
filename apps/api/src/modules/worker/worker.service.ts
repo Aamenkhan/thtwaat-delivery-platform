@@ -6,6 +6,7 @@ import {
   createWorkerBody,
   earningBody,
   workerGpsPingBody,
+  adminPatchWorkerBody,
 } from './worker.schema.js'
 import type { z } from 'zod'
 
@@ -19,7 +20,10 @@ export async function listWorkers(roleFilter?: string) {
   return prisma.worker.findMany({
     where,
     orderBy: { displayName: 'asc' },
-    include: { user: { select: { email: true, phone: true } } },
+    include: {
+      user: { select: { email: true, phone: true } },
+      homeHub: { select: { id: true, name: true, city: true, code: true } },
+    },
   })
 }
 
@@ -126,5 +130,31 @@ export async function addEarning(
       orderId: input.orderId,
       note: input.note,
     },
+  })
+}
+
+export async function adminPatchWorker(
+  workerId: string,
+  input: z.infer<typeof adminPatchWorkerBody>,
+  actorUserId: string
+) {
+  const data: {
+    isVerified?: boolean
+    verifiedAt?: Date | null
+    verifiedBy?: string | null
+    isActive?: boolean
+    homeHubId?: string | null
+  } = {}
+  if (input.isActive !== undefined) data.isActive = input.isActive
+  if (input.homeHubId !== undefined) data.homeHubId = input.homeHubId
+  if (input.isVerified !== undefined) {
+    data.isVerified = input.isVerified
+    data.verifiedAt = input.isVerified ? new Date() : null
+    data.verifiedBy = input.isVerified ? actorUserId : null
+  }
+  return prisma.worker.update({
+    where: { id: workerId },
+    data,
+    include: { homeHub: { select: { id: true, name: true, city: true } } },
   })
 }

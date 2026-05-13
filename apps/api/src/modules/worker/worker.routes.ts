@@ -6,6 +6,7 @@ import {
   createWorkerBody,
   earningBody,
   workerGpsPingBody,
+  adminPatchWorkerBody,
 } from './worker.schema.js'
 import * as ctrl from './worker.controller.js'
 import { Role } from '@prisma/client'
@@ -42,6 +43,14 @@ r.post(
   requirePlatformAdmin,
   validateBody(createWorkerBody),
   ctrl.create
+)
+
+r.patch(
+  '/:workerId',
+  requireAuth,
+  requirePlatformAdmin,
+  validateBody(adminPatchWorkerBody),
+  ctrl.adminPatch
 )
 
 r.get(

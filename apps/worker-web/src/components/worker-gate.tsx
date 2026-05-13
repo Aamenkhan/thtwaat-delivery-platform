@@ -5,6 +5,7 @@ import { clearTokens, readTokens, readUser } from '@repo/web-core/auth-storage'
 import { useRouter } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { readWorkerToken } from '../lib/worker-session'
 
 const WORKER_ROLES = new Set(['WORKER', 'DELIVERY_WORKER'])
 
@@ -13,6 +14,11 @@ export function WorkerAuthGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
+    const jwt = readWorkerToken()
+    if (jwt) {
+      setReady(true)
+      return
+    }
     const user = readUser()
     const tokens = readTokens()
     if (!user?.email || !tokens?.accessToken) {

@@ -12,10 +12,16 @@ datasource db {
 enum OrderStatus {
   CREATED
   PICKUP_ASSIGNED
+  /// Parcel QR scanned at seller; awaiting seller OTP.
+  PICKUP_SCANNED
+  /// Seller OTP verified; heading to hub.
+  SELLER_CONFIRMED
   PICKED_UP
   AT_SOURCE_HUB
   IN_TRANSIT
   AT_DESTINATION_HUB
+  /// Delivery worker assigned; ready to start last-mile run.
+  DELIVERY_ASSIGNED
   OUT_FOR_DELIVERY
   DELIVERED
   RETURN_REQUESTED
@@ -372,6 +378,26 @@ model Worker {
   /// Primary / home station (e.g. city delivery center).
   homeHubId   String?
   homeHub     Hub?       @relation("WorkerHomeHub", fields: [homeHubId], references: [id], onDelete: SetNull)
+  photoUrl          String?
+  address           String?
+  city              String?
+  pincode           String?
+  vehicleNumber     String?
+  vehicleType       String?
+  aadhaarNumber     String?
+  aadhaarPhotoUrl   String?
+  drivingLicenseNo  String?
+  drivingLicenseUrl String?
+  isOnline          Boolean   @default(false)
+  lastSeenAt        DateTime?
+  lastLat           Float?
+  lastLng           Float?
+  upiId             String?
+  bankAccount       String?
+  bankIfsc          String?
+  isVerified        Boolean   @default(false)
+  verifiedAt        DateTime?
+  verifiedBy        String?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -381,8 +407,32 @@ model Worker {
   earnings         WorkerEarning[]
   workerLocations      WorkerLocation[]
   hubWorkerAssignments HubWorkerAssignment[]
+  otpSessions      WorkerOtpSession[]
 
   @@index([homeHubId])
+}
+
+/// OTP sessions for seller/customer/hub handoffs and worker phone verification (see `OtpType`).
+model WorkerOtpSession {
+  id        String   @id @default(cuid())
+  /// Real order id, or `reg:{workerId}` for worker phone verification before pickup exists.
+  orderId   String
+  /// Hub drop flow: hub manager receives OTP.
+  hubId     String?
+  otpType   OtpType
+  otp       String
+  phone     String
+  isUsed    Boolean  @default(false)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  workerId String?
+  worker   Worker? @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, otpType, isUsed])
+  @@index([phone, otpType, expiresAt])
+  @@index([workerId])
 }
 
 /// Live gig-worker GPS trail (Socket.IO + batch writes).
@@ -464,6 +514,14 @@ model Order {
 
   /// When seller completed Razorpay checkout for quoted shipment fee (label / logistics).
   shippingPaidAt DateTime?
+
+  /// Gig worker pickup payout (paise).
+  pickupWorkerEarningCents   Int?
+  /// Gig worker delivery payout (paise).
+  deliveryWorkerEarningCents Int?
+  otpVerified   Boolean   @default(false)
+  atSourceHubAt DateTime?
+  deliveredAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -572,6 +630,7 @@ model OrderPhoto {
   url         String
   kind        String   @default("PROOF_OF_DELIVERY")
   description String?
+  uploadedByWorkerId String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1035,6 +1094,12 @@ model WebhookDeliveryLog {
 enum HubGigRole {
   PICKUP
   DELIVERY
+}
+
+enum OtpType {
+  PICKUP_FROM_SELLER
+  DELIVERY_TO_CUSTOMER
+  DROP_AT_HUB
 }
 
 enum TruckOwnership {

@@ -15,6 +15,12 @@ export const earningBody = z.object({
   note: z.string().optional(),
 })
 
+export const adminPatchWorkerBody = z.object({
+  isVerified: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+  homeHubId: z.string().nullable().optional(),
+})
+
 export const workerGpsPingBody = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),

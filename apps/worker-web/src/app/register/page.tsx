@@ -1,162 +1,317 @@
 'use client'
 
-import { ApiError, getApiBaseUrl, registerRequest } from '@repo/web-core/api'
+import { getApiBaseUrl } from '@repo/web-core/api'
 import { Button } from '@repo/ui'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { PincodeInput } from '../../components/PincodeInput'
-import type { PincodeLookupPayload } from '../../hooks/usePincodeLookup'
+import { workerFetch } from '../../lib/worker-api'
+import { writeWorkerSession } from '../../lib/worker-session'
+
+const STEPS = 5
 
 export default function WorkerRegisterPage() {
   const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [password2, setPassword2] = useState('')
-  const [fullName, setFullName] = useState('')
+  const [step, setStep] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+
+  const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  const [hubId, setHubId] = useState('')
+  const [role, setRole] = useState<'PICKUP_WORKER' | 'DELIVERY_WORKER' | ''>('')
+  const [workerId, setWorkerId] = useState('')
+  const [otp, setOtp] = useState('')
+
+  const [address, setAddress] = useState('')
   const [pincode, setPincode] = useState('')
   const [city, setCity] = useState('')
-  const [state, setState] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
+  const [vehicleType, setVehicleType] = useState('')
+  const [vehicleNumber, setVehicleNumber] = useState('')
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setMessage(null)
-    if (password.length < 8) {
-      setMessage('Password कम से कम 8 अक्षर।')
-      return
-    }
-    if (password !== password2) {
-      setMessage('दोनों password मेल नहीं खाते।')
-      return
-    }
-    if (pincode.length !== 6) {
-      setMessage('पिनकोड 6 अंक का हो।')
+  const [aadhaar, setAadhaar] = useState('')
+  const [license, setLicense] = useState('')
+
+  const [upi, setUpi] = useState('')
+  const [bankAcc, setBankAcc] = useState('')
+  const [bankIfsc, setBankIfsc] = useState('')
+
+  async function sendOtp() {
+    setMsg(null)
+    if (!name.trim() || phone.length < 10 || !hubId.trim() || !role) {
+      setMsg('Name, phone, hub ID, role ज़रूरी।')
       return
     }
     setLoading(true)
     try {
-      const locationBits = [city, state].filter(Boolean).join(', ')
-      const composedName =
-        fullName.trim() + (locationBits ? ` (${locationBits})` : '')
-      await registerRequest({
-        email: email.trim(),
-        password,
-        phone: phone.trim() || undefined,
-        fullName: composedName.trim() || undefined,
-        role: 'WORKER',
+      const res = await workerFetch<{ workerId: string }>('/workers/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: name.trim(),
+          phone,
+          role,
+          hubId: hubId.trim(),
+        }),
+        skipAuth: true,
+      })
+      setWorkerId(res.workerId)
+      setStep(2)
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Register failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function verifyOtp() {
+    setLoading(true)
+    setMsg(null)
+    try {
+      const res = await workerFetch<{ token: string; worker: { id: string } }>(
+        '/workers/verify-phone',
+        {
+          method: 'POST',
+          body: JSON.stringify({ workerId, otp }),
+          skipAuth: true,
+        }
+      )
+      writeWorkerSession(res.token, res.worker.id)
+      setStep(3)
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'OTP failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function submitFinal() {
+    setLoading(true)
+    setMsg(null)
+    try {
+      await workerFetch(`/workers/${workerId}/profile`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: name.trim(),
+          address,
+          city,
+          pincode,
+          vehicleNumber,
+          vehicleType,
+          upiId: upi || undefined,
+          bankAccount: bankAcc || undefined,
+          bankIfsc: bankIfsc || undefined,
+          aadhaarNumber: aadhaar || undefined,
+          drivingLicenseNo: license || undefined,
+        }),
       })
       router.replace('/dashboard')
-      router.refresh()
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        setMessage('यह ईमेल पहले से रजिस्टर्ड है — लॉगिन करें।')
-      } else if (err instanceof ApiError) {
-        setMessage(err.message)
-      } else {
-        setMessage('सर्वर से जुड़ नहीं सके — नेटवर्क चेक करें।')
-      }
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Save failed')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6 sm:p-10">
-      <div className="rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Worker रजिस्टर</h1>
-          <p className="mt-1 text-xs text-muted-foreground">फील्ड / डिलीवरी खाता</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            API:{' '}
-            <code className="rounded bg-muted px-1 py-0.5 text-xs">{getApiBaseUrl()}</code>
-          </p>
-        </div>
-        {message ? <p className="mt-4 text-sm text-destructive">{message}</p> : null}
-        <form className="mt-6 flex flex-col gap-4 text-sm" onSubmit={onSubmit}>
-          <label className="flex flex-col gap-1">
-            पूरा नाम
+    <main className="mx-auto min-h-screen max-w-lg px-4 py-6">
+      <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full bg-indigo-500 transition-all"
+          style={{ width: `${(step / STEPS) * 100}%` }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Step {step} / {STEPS} · API {getApiBaseUrl()}
+      </p>
+      {msg ? <p className="mt-2 text-sm text-destructive">{msg}</p> : null}
+
+      {step === 1 ? (
+        <div className="mt-4 flex flex-col gap-4">
+          <label className="text-sm">
+            Full name
             <input
-              className="rounded-md border bg-background px-3 py-2"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              autoComplete="name"
-              required
+              className="mt-1 min-h-12 w-full rounded-lg border px-3 text-base"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
             />
           </label>
-          <label className="flex flex-col gap-1">
-            फोन (वैकल्पिक)
+          <label className="text-sm">
+            Phone
             <input
-              className="rounded-md border bg-background px-3 py-2"
+              className="mt-1 min-h-12 w-full rounded-lg border px-3 text-base"
+              inputMode="numeric"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              inputMode="tel"
-              autoComplete="tel"
+              onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+            />
+          </label>
+          <label className="text-sm">
+            Home hub ID (admin से लें)
+            <input
+              className="mt-1 min-h-12 w-full rounded-lg border px-3 font-mono text-sm"
+              value={hubId}
+              onChange={(e) => setHubId(e.target.value.trim())}
+            />
+          </label>
+          <div className="grid gap-2">
+            <button
+              type="button"
+              className={`min-h-14 rounded-xl border-2 px-3 text-left text-sm font-medium ${
+                role === 'PICKUP_WORKER' ? 'border-indigo-500 bg-indigo-500/10' : ''
+              }`}
+              onClick={() => setRole('PICKUP_WORKER')}
+            >
+              PICKUP WORKER
+            </button>
+            <button
+              type="button"
+              className={`min-h-14 rounded-xl border-2 px-3 text-left text-sm font-medium ${
+                role === 'DELIVERY_WORKER' ? 'border-indigo-500 bg-indigo-500/10' : ''
+              }`}
+              onClick={() => setRole('DELIVERY_WORKER')}
+            >
+              DELIVERY WORKER
+            </button>
+          </div>
+          <Button className="min-h-14 w-full" disabled={loading} onClick={() => void sendOtp()}>
+            Send OTP
+          </Button>
+        </div>
+      ) : null}
+
+      {step === 2 ? (
+        <div className="mt-4 flex flex-col gap-4">
+          <label className="text-sm">
+            OTP
+            <input
+              className="mt-1 min-h-12 w-full rounded-lg border px-3 text-center text-2xl tracking-widest"
+              inputMode="numeric"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            />
+          </label>
+          <Button className="min-h-14 w-full" disabled={loading} onClick={() => void verifyOtp()}>
+            Verify
+          </Button>
+        </div>
+      ) : null}
+
+      {step === 3 ? (
+        <div className="mt-4 flex flex-col gap-4">
+          <label className="text-sm">
+            Address
+            <textarea
+              className="mt-1 min-h-[4.5rem] w-full rounded-lg border px-3 py-2 text-base"
+              rows={3}
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
             />
           </label>
           <PincodeInput
-            id="worker-service-pin"
-            fieldLabel="सेवा क्षेत्र पिनकोड"
             value={pincode}
             onChange={setPincode}
-            onPincodeResolved={(p: PincodeLookupPayload) => {
-              setCity(p.city)
-              setState(p.state)
-            }}
+            onPincodeResolved={(p) => setCity(p.city)}
           />
-          {city ? (
-            <p className="text-xs text-muted-foreground">
-              सेवा क्षेत्र: {city}, {state}
-            </p>
-          ) : null}
-          <label className="flex flex-col gap-1">
-            ईमेल
+          <label className="text-sm">
+            City
             <input
-              className="rounded-md border bg-background px-3 py-2"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
+              className="mt-1 min-h-12 w-full rounded-lg border px-3"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
             />
           </label>
-          <label className="flex flex-col gap-1">
-            पासवर्ड (कम से कम 8)
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {['Bike', 'Scooter', 'Auto', 'Mini Truck'].map((v) => (
+              <button
+                key={v}
+                type="button"
+                className={`shrink-0 rounded-full border px-4 py-2 text-sm ${
+                  vehicleType === v ? 'border-indigo-500 bg-indigo-500/10' : ''
+                }`}
+                onClick={() => setVehicleType(v)}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+          <label className="text-sm">
+            Vehicle number
             <input
-              className="rounded-md border bg-background px-3 py-2"
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={8}
+              className="mt-1 min-h-12 w-full rounded-lg border px-3 uppercase"
+              value={vehicleNumber}
+              onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())}
             />
           </label>
-          <label className="flex flex-col gap-1">
-            पासवर्ड दोबारा
-            <input
-              className="rounded-md border bg-background px-3 py-2"
-              type="password"
-              autoComplete="new-password"
-              value={password2}
-              onChange={(e) => setPassword2(e.target.value)}
-              required
-              minLength={8}
-            />
-          </label>
-          <Button type="submit" disabled={loading} className="w-full">
-            {loading ? '…' : 'खाता बनाएं और साइन इन'}
+          <Button className="min-h-14 w-full" onClick={() => setStep(4)}>
+            Next
           </Button>
-        </form>
-        <p className="mt-4 text-center text-sm text-muted-foreground">
-          पहले से खाता?{' '}
-          <Link href="/login" className="text-primary underline">
-            लॉगिन
-          </Link>
-        </p>
-      </div>
+        </div>
+      ) : null}
+
+      {step === 4 ? (
+        <div className="mt-4 flex flex-col gap-4">
+          <label className="text-sm">
+            Aadhaar (12 digits)
+            <input
+              className="mt-1 min-h-12 w-full rounded-lg border px-3"
+              inputMode="numeric"
+              value={aadhaar}
+              onChange={(e) => setAadhaar(e.target.value.replace(/\D/g, '').slice(0, 12))}
+            />
+          </label>
+          <label className="text-sm">
+            Driving licence no.
+            <input
+              className="mt-1 min-h-12 w-full rounded-lg border px-3"
+              value={license}
+              onChange={(e) => setLicense(e.target.value)}
+            />
+          </label>
+          <Button className="min-h-14 w-full" onClick={() => setStep(5)}>
+            Next
+          </Button>
+        </div>
+      ) : null}
+
+      {step === 5 ? (
+        <div className="mt-4 flex flex-col gap-4">
+          <label className="text-sm">
+            UPI ID
+            <input
+              className="mt-1 min-h-12 w-full rounded-lg border px-3"
+              placeholder="name@paytm"
+              value={upi}
+              onChange={(e) => setUpi(e.target.value)}
+            />
+          </label>
+          <p className="text-center text-xs text-muted-foreground">या बैंक</p>
+          <label className="text-sm">
+            Account
+            <input
+              className="mt-1 min-h-12 w-full rounded-lg border px-3"
+              value={bankAcc}
+              onChange={(e) => setBankAcc(e.target.value)}
+            />
+          </label>
+          <label className="text-sm">
+            IFSC
+            <input
+              className="mt-1 min-h-12 w-full rounded-lg border px-3"
+              value={bankIfsc}
+              onChange={(e) => setBankIfsc(e.target.value.toUpperCase())}
+            />
+          </label>
+          <Button className="min-h-14 w-full" disabled={loading} onClick={() => void submitFinal()}>
+            Submit registration
+          </Button>
+        </div>
+      ) : null}
+
+      <p className="mt-8 text-center text-sm">
+        <Link href="/login" className="text-primary underline">
+          Login
+        </Link>
+      </p>
     </main>
   )
 }

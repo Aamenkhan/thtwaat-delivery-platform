@@ -8,14 +8,16 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 
 export const metadata: Metadata = {
-  title: 'Field Worker',
+  title: 'Thtwaat Worker',
   description: 'Delivery worker app',
+  manifest: '/manifest.json',
+  appleWebApp: { capable: true, title: 'TW Worker' },
 }
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#0f172a',
+  themeColor: '#6366f1',
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -1,0 +1,6 @@
+{
+  "framework": "nextjs",
+  "installCommand": "corepack enable && corepack prepare pnpm@9.15.0 --activate && pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm exec turbo run build --filter=@repo/admin-web",
+  "outputDirectory": "apps/admin-web/.next"
+}

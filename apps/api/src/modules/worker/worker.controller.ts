@@ -73,3 +73,17 @@ export const postEarning: RequestHandler = async (req, res, next) => {
     next(e)
   }
 }
+
+export const adminPatch: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.auth) throw new HttpError(401, 'Unauthorized')
+    const worker = await workerService.adminPatchWorker(
+      req.params.workerId!,
+      req.body,
+      req.auth.userId
+    )
+    res.json({ ok: true, data: { worker } })
+  } catch (e) {
+    next(e)
+  }
+}

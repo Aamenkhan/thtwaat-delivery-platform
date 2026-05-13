@@ -1,98 +1,248 @@
 'use client'
 
-import {
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  FadeIn,
-  KpiCard,
-  PageHeader,
-  StatusBadge,
-} from '@repo/ui'
-import { MapPin, Radio, WifiOff } from 'lucide-react'
+import { Button } from '@repo/ui'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { workerFetch } from '../../lib/worker-api'
+import { readWorkerId } from '../../lib/worker-session'
+import { disconnectWorkerSocket, getWorkerSocket } from '../../lib/worker-socket'
 
-export default function WorkerHome() {
-  const [online, setOnline] = useState(true)
+type Profile = {
+  id: string
+  displayName: string
+  photoUrl: string | null
+  isOnline: boolean
+  todayEarnings: number
+  homeHubId: string | null
+}
+
+type OrderRow = {
+  id: string
+  publicId: string
+  status: string
+  pickupWorkerId: string | null
+  assignedWorkerId: string | null
+  seller: { companyName: string | null }
+  customer: { fullName: string } | null
+  orderItems: { title: string }[]
+  pickupLocation: { line1: string } | null
+  deliveryLocation: { line1: string } | null
+}
+
+export default function WorkerDashboard() {
+  const id = readWorkerId()
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [active, setActive] = useState<OrderRow[]>([])
+  const [done, setDone] = useState<OrderRow[]>([])
+  const [err, setErr] = useState<string | null>(null)
+  const [online, setOnline] = useState(false)
+  const watchRef = useRef<number | null>(null)
+  const locTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
-    const sync = () => setOnline(typeof navigator !== 'undefined' ? navigator.onLine : true)
-    sync()
-    window.addEventListener('online', sync)
-    window.addEventListener('offline', sync)
+    if (!id) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const p = await workerFetch<Profile>(`/workers/${id}/profile`)
+        if (!cancelled) {
+          setProfile(p)
+          setOnline(Boolean(p.isOnline))
+        }
+        const a = await workerFetch<OrderRow[]>(`/workers/me/orders?filter=active`)
+        if (!cancelled) setActive(a)
+        const d = await workerFetch<OrderRow[]>(`/workers/me/orders?filter=completed_today`)
+        if (!cancelled) setDone(d)
+      } catch (e) {
+        if (!cancelled) setErr(e instanceof Error ? e.message : 'Load failed')
+      }
+    })()
     return () => {
-      window.removeEventListener('online', sync)
-      window.removeEventListener('offline', sync)
+      cancelled = true
     }
-  }, [])
+  }, [id])
+
+  useEffect(() => {
+    if (!id || !profile?.homeHubId) return
+    const s = getWorkerSocket()
+    s.emit('subscribe:hub', profile.homeHubId)
+    return () => {
+      disconnectWorkerSocket()
+    }
+  }, [id, profile?.homeHubId])
+
+  async function toggleOnline(next: boolean) {
+    if (!id) return
+    setErr(null)
+    try {
+      if (next) {
+        if (typeof navigator === 'undefined' || !navigator.geolocation) {
+          await workerFetch(`/workers/${id}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ isOnline: true }),
+          })
+          setOnline(true)
+          return
+        }
+        await new Promise<void>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+              try {
+                await workerFetch(`/workers/${id}/status`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({
+                    isOnline: true,
+                    lat: pos.coords.latitude,
+                    lng: pos.coords.longitude,
+                  }),
+                })
+                setOnline(true)
+                watchRef.current = navigator.geolocation.watchPosition(
+                  (p) => {
+                    void workerFetch(`/workers/${id}/location`, {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        lat: p.coords.latitude,
+                        lng: p.coords.longitude,
+                      }),
+                    })
+                  },
+                  console.error,
+                  { enableHighAccuracy: true, maximumAge: 20_000 }
+                )
+                locTimer.current = setInterval(() => {
+                  navigator.geolocation.getCurrentPosition((p) => {
+                    void workerFetch(`/workers/${id}/location`, {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        lat: p.coords.latitude,
+                        lng: p.coords.longitude,
+                      }),
+                    })
+                  })
+                }, 30_000)
+                resolve()
+              } catch (e) {
+                reject(e)
+              }
+            },
+            reject,
+            { enableHighAccuracy: true, timeout: 15_000 }
+          )
+        })
+      } else {
+        await workerFetch(`/workers/${id}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ isOnline: false }),
+        })
+        setOnline(false)
+        if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current)
+        watchRef.current = null
+        if (locTimer.current) clearInterval(locTimer.current)
+        locTimer.current = null
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Status update failed')
+    }
+  }
+
+  const label = useMemo(() => {
+    if (!profile) return '…'
+    return profile.displayName
+  }, [profile])
+
+  if (!id) {
+    return <p className="p-6 text-sm">Login करें।</p>
+  }
 
   return (
-    <div className="space-y-6">
-      <FadeIn>
-        <PageHeader
-          title="Field control"
-          description="Routes, scans, OTP handoffs, and proof — optimized for one-thumb flows in sunlight."
-        />
-      </FadeIn>
-
-      {!online ? (
+    <div className="space-y-5">
+      <header className="flex items-center gap-3">
         <div
-          className="flex items-center gap-3 rounded-2xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-50"
-          role="status"
-        >
-          <WifiOff className="size-5 shrink-0" aria-hidden />
-          <div>
-            <p className="font-medium">Offline</p>
-            <p className="text-xs opacity-90">Scans queue when connectivity returns (wire your offline store).</p>
-          </div>
+          className="size-10 shrink-0 overflow-hidden rounded-full bg-muted bg-cover bg-center"
+          style={profile?.photoUrl ? { backgroundImage: `url(${profile.photoUrl})` } : undefined}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-semibold">{label}</p>
+          <p className="text-xs text-muted-foreground">{online ? 'Online' : 'Offline'}</p>
         </div>
-      ) : (
-        <div className="flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-3 py-2 text-xs font-medium text-emerald-900 dark:text-emerald-100">
-          <Radio className="size-3.5" aria-hidden />
-          Live · connected
-        </div>
-      )}
+      </header>
 
-      <section className="grid gap-3 sm:grid-cols-3">
-        <KpiCard label="Today&apos;s runs" value="6 stops" hint="Demo route density" icon={MapPin} />
-        <KpiCard label="Earnings (demo)" value="₹1,240" hint="After hub incentives" variant="glass" />
-        <KpiCard label="SLA" value="98%" hint="On-time first attempt" />
+      <button
+        type="button"
+        onClick={() => void toggleOnline(!online)}
+        className={`flex min-h-14 w-full items-center justify-center rounded-2xl text-base font-semibold text-white shadow ${
+          online
+            ? 'bg-gradient-to-r from-emerald-500 to-teal-600'
+            : 'bg-gradient-to-r from-slate-500 to-slate-700'
+        }`}
+      >
+        {online ? 'YOU ARE ONLINE' : 'TAP TO GO ONLINE'}
+      </button>
+
+      {err ? <p className="text-sm text-destructive">{err}</p> : null}
+
+      <div className="grid grid-cols-2 gap-3 text-center">
+        <div className="rounded-xl border p-3">
+          <p className="text-xs text-muted-foreground">Today</p>
+          <p className="text-lg font-bold">₹{profile?.todayEarnings?.toFixed(0) ?? '—'}</p>
+        </div>
+        <div className="rounded-xl border p-3">
+          <p className="text-xs text-muted-foreground">Active orders</p>
+          <p className="text-lg font-bold">{active.length}</p>
+        </div>
+      </div>
+
+      <section>
+        <h2 className="mb-2 text-sm font-semibold">Active orders</h2>
+        <div className="space-y-3">
+          {active.length === 0 ? (
+            <p className="text-sm text-muted-foreground">कोई सक्रिय ऑर्डर नहीं।</p>
+          ) : (
+            active.map((o) => {
+              const pickup = o.pickupWorkerId === id
+              const title = o.orderItems[0]?.title ?? 'Order'
+              const name = pickup
+                ? (o.seller.companyName ?? 'Seller')
+                : (o.customer?.fullName ?? 'Customer')
+              const addr =
+                (pickup ? o.pickupLocation?.line1 : o.deliveryLocation?.line1) ?? '—'
+              return (
+                <div key={o.id} className="rounded-xl border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">{o.publicId.slice(0, 8)}…</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                        pickup ? 'bg-violet-500/15 text-violet-700' : 'bg-sky-500/15 text-sky-800'
+                      }`}
+                    >
+                      {pickup ? 'Pickup' : 'Delivery'}
+                    </span>
+                  </div>
+                  <p className="mt-1 font-medium">{title}</p>
+                  <p className="text-sm text-muted-foreground">{name}</p>
+                  <p className="line-clamp-1 text-xs text-muted-foreground">{addr}</p>
+                  <p className="mt-1 text-xs">{o.status}</p>
+                  <Button asChild className="mt-3 min-h-12 w-full">
+                    <Link href={`/orders/${o.id}`}>Take action →</Link>
+                  </Button>
+                </div>
+              )
+            })
+          )}
+        </div>
       </section>
 
-      <Card variant="elevated">
-        <CardHeader>
-          <CardTitle className="text-base">Next actions</CardTitle>
-          <CardDescription>Typical shift flow</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <Button asChild>
-            <Link href="/dashboard/routes">Open routes</Link>
-          </Button>
-          <Button variant="secondary" asChild>
-            <Link href="/dashboard/scan">Scan QR</Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href="/dashboard/otp">OTP verify</Link>
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-base">Demo assignment</CardTitle>
-          <StatusBadge tone="info">In progress</StatusBadge>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <p>
-            <span className="font-medium text-foreground">BLR-HUB-04 → Indiranagar</span> · 3 COD · 2 prepaid
-          </p>
-          <p className="text-xs">Use proof photo after OTP success for high-value parcels.</p>
-        </CardContent>
-      </Card>
+      <section>
+        <h2 className="mb-2 text-sm font-semibold">Completed today ({done.length})</h2>
+        <div className="space-y-2 text-sm text-muted-foreground">
+          {done.map((o) => (
+            <div key={o.id} className="rounded-lg border px-3 py-2">
+              {o.publicId.slice(0, 8)}… · {o.status}
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   )
 }

@@ -9,15 +9,17 @@ import {
   DropdownMenuTrigger,
 } from '@repo/ui'
 import { logoutRequest } from '@repo/web-core/api'
-import { readUser } from '@repo/web-core/auth-storage'
+import { clearTokens, readTokens, readUser } from '@repo/web-core/auth-storage'
 import { Camera, LayoutDashboard, LogOut, MapPin, Navigation, QrCode, User, KeyRound } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { clearWorkerSession, readWorkerId } from '../lib/worker-session'
 
 const nav = [
   { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
+  { href: '/profile', label: 'Profile', icon: User },
   { href: '/dashboard/routes', label: 'Routes', icon: MapPin },
   { href: '/dashboard/scan', label: 'Scan', icon: QrCode },
   { href: '/dashboard/otp', label: 'OTP', icon: KeyRound },
@@ -30,13 +32,20 @@ const mobileNav = nav.filter((n) => n.href !== '/dashboard/gps')
 export function WorkerShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const [email, setEmail] = useState('')
+  const [label, setLabel] = useState('')
   useEffect(() => {
-    setEmail(readUser()?.email ?? '')
+    const u = readUser()?.email
+    const id = readWorkerId()
+    setLabel(u || (id ? `Worker ${id.slice(0, 6)}…` : 'Worker'))
   }, [])
 
   async function logout() {
-    await logoutRequest()
+    clearWorkerSession()
+    try {
+      if (readTokens()?.accessToken) await logoutRequest()
+    } catch {
+      clearTokens()
+    }
     router.replace('/login')
     router.refresh()
   }
@@ -46,10 +55,13 @@ export function WorkerShell({ children }: { children: ReactNode }) {
       <DropdownMenuTrigger asChild>
         <Button variant="subtle" size="sm" className="gap-2">
           <User className="size-4" />
-          <span className="hidden max-w-[9rem] truncate sm:inline">{email || 'Worker'}</span>
+          <span className="hidden max-w-[9rem] truncate sm:inline">{label}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem asChild>
+          <Link href="/profile">Profile</Link>
+        </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/dashboard/gps">GPS ping</Link>
         </DropdownMenuItem>

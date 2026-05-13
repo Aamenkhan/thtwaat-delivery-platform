@@ -17,10 +17,13 @@ export function orderStatusToLifecycle(status: OrderStatus): PanIndiaLifecycle {
   const map: Record<OrderStatus, PanIndiaLifecycle> = {
     [OrderStatus.CREATED]: 'ORDER_CREATED',
     [OrderStatus.PICKUP_ASSIGNED]: 'PICKUP_ASSIGNED',
+    [OrderStatus.PICKUP_SCANNED]: 'PICKED_UP',
+    [OrderStatus.SELLER_CONFIRMED]: 'PICKED_UP',
     [OrderStatus.PICKED_UP]: 'PICKED_UP',
     [OrderStatus.AT_SOURCE_HUB]: 'AT_SOURCE_HUB',
     [OrderStatus.IN_TRANSIT]: 'IN_TRANSIT',
     [OrderStatus.AT_DESTINATION_HUB]: 'AT_DESTINATION_HUB',
+    [OrderStatus.DELIVERY_ASSIGNED]: 'AT_DESTINATION_HUB',
     [OrderStatus.OUT_FOR_DELIVERY]: 'OUT_FOR_DELIVERY',
     [OrderStatus.DELIVERED]: 'DELIVERED',
     [OrderStatus.RETURN_REQUESTED]: 'RTO_INITIATED',

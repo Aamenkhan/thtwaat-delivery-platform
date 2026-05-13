@@ -1,4 +1,4 @@
-import type { MembershipRole, Role } from '@prisma/client'
+import type { MembershipRole, Role, WorkerRole } from '@prisma/client'
 
 declare global {
   namespace Express {
@@ -8,6 +8,12 @@ declare global {
         role: Role
         orgId?: string
         membershipRole?: MembershipRole
+      }
+      workerAuth?: {
+        workerId: string
+        hubId: string | null
+        workerRole: WorkerRole
+        role: Role
       }
       apiKeyAuth?: {
         id: string

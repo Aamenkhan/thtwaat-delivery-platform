@@ -8,6 +8,7 @@ import * as orderService from '../modules/order/order.service.js'
 import { HttpError } from '../lib/http-error.js'
 import { prisma } from '../lib/prisma.js'
 import { z } from 'zod'
+import { workerGigRouter } from '../modules/worker-gig/worker-gig.routes.js'
 
 const returnBody = z.object({
   publicId: z.string().min(1),
@@ -36,6 +37,7 @@ const r = Router()
 
 r.use(commercialPartnerRouter)
 r.use(apiOrdersRouter)
+r.use(workerGigRouter)
 
 const postReturns = async (req: Request, res: Response, next: NextFunction) => {
   try {
