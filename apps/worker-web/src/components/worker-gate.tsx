@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 
-const WORKER_ROLES = new Set(['WORKER'])
+const WORKER_ROLES = new Set(['WORKER', 'DELIVERY_WORKER'])
 
 export function WorkerAuthGate({ children }: { children: ReactNode }) {
   const router = useRouter()

@@ -1,22 +1,14 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { verifyEdgeToken } from '@repo/web-core/edge-auth'
 
-const SELLER_ROLES = new Set(['SELLER', 'HUB_MANAGER'])
-
-export async function middleware(req: NextRequest) {
-  const token = req.cookies.get('thtwaat_access_token')?.value
-
-  if (!token) {
-    return NextResponse.redirect(new URL('/login', req.url))
-  }
-
-  const payload = await verifyEdgeToken(token)
-
-  if (!payload || !SELLER_ROLES.has(payload.role)) {
-    return NextResponse.redirect(new URL('/login?error=unauthorized', req.url))
-  }
-
+/**
+ * Auth is enforced client-side (`SellerAuthGate` + JWT in localStorage from
+ * `loginRequest` / `registerRequest`). We intentionally do not validate
+ * `thtwaat_access_token` here: the API sets that cookie on its own host
+ * (e.g. Render); it is not sent to this Vercel origin, so a cookie check would
+ * always redirect logged-in users back to `/login`.
+ */
+export function middleware(_req: NextRequest) {
   return NextResponse.next()
 }
 
