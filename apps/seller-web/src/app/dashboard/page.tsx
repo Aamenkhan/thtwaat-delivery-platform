@@ -1,6 +1,6 @@
 'use client'
 
-import { apiFetch, logoutRequest } from '@repo/web-core/api'
+import { ApiError, apiFetch, logoutRequest } from '@repo/web-core/api'
 import { createRealtimeSocket, subscribeOrderStatus } from '@repo/web-core/socket'
 import type { SellerDashboardSummary } from '@repo/types'
 import {
@@ -33,6 +33,14 @@ import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { DEMO_ACTIVITY } from '../../lib/demo-logistics'
+
+function formatDashboardQueryError(err: unknown): string {
+  if (err instanceof ApiError) {
+    return `${err.message} (HTTP ${err.status})`
+  }
+  if (err instanceof Error) return err.message
+  return 'Unknown error'
+}
 
 type ShipmentRow = {
   publicId: string
@@ -145,7 +153,12 @@ export default function SellerDashboardHome() {
           <Card className="border-destructive/40 sm:col-span-2 xl:col-span-4">
             <CardHeader>
               <CardTitle>Could not load metrics</CardTitle>
-              <CardDescription>Check API URL, auth, and network.</CardDescription>
+              <CardDescription>
+                Check API URL, auth, and network.{' '}
+                <span className="mt-1 block font-mono text-xs text-muted-foreground">
+                  {formatDashboardQueryError(summaryQ.error)}
+                </span>
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <Button variant="outline" type="button" onClick={() => void summaryQ.refetch()}>
