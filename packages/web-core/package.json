@@ -8,6 +8,7 @@
     "lint": "echo ok"
   },
   "exports": {
+    "./india-pincode": "./src/india-pincode.ts",
     "./api": "./src/api-client.ts",
     "./auth-storage": "./src/auth-storage.ts",
     "./socket": "./src/socket-client.ts",

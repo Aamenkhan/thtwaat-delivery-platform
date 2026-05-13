@@ -3,6 +3,7 @@ import { z } from 'zod'
 export const createHubBody = z.object({
   name: z.string().min(1),
   city: z.string().optional(),
+  state: z.string().optional(),
   code: z.string().optional(),
   latitude: z.number(),
   longitude: z.number(),

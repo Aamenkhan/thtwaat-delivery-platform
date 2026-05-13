@@ -116,7 +116,7 @@ export async function runBookShipment(
 ): Promise<BookShipmentEngineResult> {
   const weightGrams = weightGramsFromInput(input.weight)
   const codAmountCents = Math.round(input.codAmount * 100)
-  const orderType = mapParcelToOrderType(input.parcelType)
+  const orderType = input.orderType ?? mapParcelToOrderType(input.parcelType)
 
   const usePincode =
     input.pickupPincode &&

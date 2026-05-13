@@ -1,6 +1,6 @@
 'use client'
 
-import { apiFetch } from '@repo/web-core/api'
+import { apiFetch, getApiBaseUrl } from '@repo/web-core/api'
 import { createRealtimeSocket, subscribeOrderStatus } from '@repo/web-core/socket'
 import { RazorpayCheckoutTrigger } from '../../../../components/razorpay-checkout-trigger'
 import {
@@ -22,8 +22,9 @@ import {
 import { Mail, MapPin, Phone, QrCode, Route, User } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
+import { ShipmentVerticalTimeline, type VerticalTimelineStep } from '../../../../components/shipment-vertical-timeline'
 
 type ScanTimelineItem = {
   id: string
@@ -66,6 +67,29 @@ type TrackingResponse = {
     customer: { fullName: string; phone: string; email: string | null } | null
   }
   timeline: TimelineItem[]
+}
+
+type TrackAggData = {
+  orderNumber: string
+  status: string
+  type: string
+  productName: string
+  createdAt: string
+  estimatedDelivery: string
+  currentHub: { name: string; city: string | null } | null
+  timeline: VerticalTimelineStep[]
+  workerInfo: { pickupWorkerName: string | null; deliveryWorkerName: string | null }
+  otpVerified: boolean
+  scanLogs: {
+    id: string
+    event: string
+    scannedAt: string
+    hubName: string | null
+    workerFirstName: string | null
+    photoUrl: string | null
+  }[]
+  photos: { id: string; url: string; kind: string; createdAt: string }[]
+  canRequestReturn: boolean
 }
 
 function formatScanTitle(event: string) {
@@ -180,6 +204,7 @@ export default function TrackingPage() {
   const qc = useQueryClient()
   const [live, setLive] = useState<string | null>(null)
   const [payMsg, setPayMsg] = useState<string | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
 
   const q = useQuery({
     queryKey: ['tracking', publicId],
@@ -198,6 +223,40 @@ export default function TrackingPage() {
     enabled: Boolean(publicId),
   })
 
+  const trackAgg = useQuery({
+    queryKey: ['public-track-agg', publicId],
+    queryFn: async () => {
+      const base = getApiBaseUrl()
+      const res = await fetch(
+        `${base}/api/v1/orders/${encodeURIComponent(publicId)}/track`,
+        { cache: 'no-store' }
+      )
+      const j = (await res.json()) as {
+        ok?: boolean
+        data?: TrackAggData
+        error?: { message?: string }
+      }
+      if (!res.ok) {
+        throw new Error(j.error?.message ?? `HTTP ${res.status}`)
+      }
+      if (!j.data) throw new Error('Invalid track payload')
+      return j.data
+    },
+    enabled: Boolean(publicId),
+  })
+
+  const returnMut = useMutation({
+    mutationFn: () =>
+      apiFetch(`/v1/orders/${encodeURIComponent(publicId)}/return`, {
+        method: 'POST',
+        body: { reason: 'Seller return (48h window)' },
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['tracking', publicId] })
+      void qc.invalidateQueries({ queryKey: ['public-track-agg', publicId] })
+    },
+  })
+
   const data = q.data?.data
   const timeline = data?.timeline ?? []
   const parcel = useMemo(() => extractParcelSummary(timeline), [timeline])
@@ -205,6 +264,14 @@ export default function TrackingPage() {
   const feePaise = parcel.pricingInr != null ? Math.max(0, Math.round(parcel.pricingInr * 100)) : 0
   const shippingPaidAt = shipQ.data?.data?.order?.shippingPaidAt ?? null
   const timelineItems = useMemo(() => buildTimelineItems(timeline), [timeline])
+
+  const galleryUrls = useMemo(() => {
+    const d = trackAgg.data
+    if (!d) return [] as string[]
+    const fromPhotos = d.photos.map((p) => p.url)
+    const fromScans = d.scanLogs.map((s) => s.photoUrl).filter(Boolean) as string[]
+    return [...new Set([...fromPhotos, ...fromScans])]
+  }, [trackAgg.data])
 
   const socket = useMemo(() => createRealtimeSocket(), [])
 
@@ -214,10 +281,12 @@ export default function TrackingPage() {
       onStatus: () => {
         setLive('Status updated')
         void qc.invalidateQueries({ queryKey: ['tracking', publicId] })
+        void qc.invalidateQueries({ queryKey: ['public-track-agg', publicId] })
       },
       onTracking: () => {
         setLive('Tracking updated')
         void qc.invalidateQueries({ queryKey: ['tracking', publicId] })
+        void qc.invalidateQueries({ queryKey: ['public-track-agg', publicId] })
       },
     })
     return () => {
@@ -369,6 +438,125 @@ export default function TrackingPage() {
             </Card>
           ) : null}
 
+          {trackAgg.isLoading ? (
+            <Skeleton className="h-56 w-full rounded-2xl" />
+          ) : trackAgg.isError ? (
+            <p className="text-xs text-muted-foreground">
+              Journey summary unavailable (
+              {trackAgg.error instanceof Error ? trackAgg.error.message : 'error'})
+            </p>
+          ) : trackAgg.data ? (
+            <Card variant="elevated">
+              <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
+                <div>
+                  <CardTitle className="text-base">Shipment operations</CardTitle>
+                  <CardDescription>Timeline, OTP, workers, scans, and proofs</CardDescription>
+                </div>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/track/${encodeURIComponent(trackAgg.data.orderNumber)}`} target="_blank" rel="noreferrer">
+                    Public track
+                  </Link>
+                </Button>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-6">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border bg-muted/15 p-3 text-sm">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Customer OTP</p>
+                    <p className="mt-1 font-semibold">
+                      {trackAgg.data.otpVerified ? 'Verified' : 'Pending'}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border bg-muted/15 p-3 text-sm">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current hub</p>
+                    <p className="mt-1 font-medium">
+                      {trackAgg.data.currentHub
+                        ? `${trackAgg.data.currentHub.name}${
+                            trackAgg.data.currentHub.city
+                              ? ` · ${trackAgg.data.currentHub.city}`
+                              : ''
+                          }`
+                        : '—'}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border bg-muted/15 p-3 text-sm">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pickup worker</p>
+                    <p className="mt-1 font-medium">{trackAgg.data.workerInfo.pickupWorkerName ?? '—'}</p>
+                  </div>
+                  <div className="rounded-xl border bg-muted/15 p-3 text-sm">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Delivery worker</p>
+                    <p className="mt-1 font-medium">{trackAgg.data.workerInfo.deliveryWorkerName ?? '—'}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Standard journey
+                  </h3>
+                  <ShipmentVerticalTimeline steps={trackAgg.data.timeline} />
+                </div>
+
+                <div>
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Scan events
+                  </h3>
+                  <ul className="max-h-56 space-y-2 overflow-y-auto text-xs">
+                    {trackAgg.data.scanLogs.map((s) => (
+                      <li
+                        key={s.id}
+                        className="flex flex-wrap justify-between gap-2 rounded-lg border bg-background/60 px-2 py-1.5"
+                      >
+                        <span className="font-mono">{s.event}</span>
+                        <span className="text-muted-foreground">{formatWhen(s.scannedAt)}</span>
+                        <span className="w-full text-muted-foreground">
+                          {[s.hubName, s.workerFirstName].filter(Boolean).join(' · ') || '—'}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {galleryUrls.length > 0 ? (
+                  <div>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Photo proofs
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {galleryUrls.map((url) => (
+                        <button
+                          key={url}
+                          type="button"
+                          className="relative size-16 overflow-hidden rounded-md border bg-muted focus:outline-none focus:ring-2 focus:ring-primary"
+                          onClick={() => setPhotoPreview(url)}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={url} alt="" className="size-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {trackAgg.data.canRequestReturn ? (
+                  <div className="flex flex-wrap items-center gap-3 border-t pt-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={returnMut.isPending}
+                      onClick={() => void returnMut.mutate()}
+                    >
+                      {returnMut.isPending ? 'Submitting…' : 'Request return'}
+                    </Button>
+                    {returnMut.isError ? (
+                      <span className="text-xs text-destructive">
+                        {returnMut.error instanceof Error ? returnMut.error.message : 'Return failed'}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
           {shippingPaidAt ? (
             <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
               Shipment fee paid · {new Date(shippingPaidAt).toLocaleString()}
@@ -428,10 +616,29 @@ export default function TrackingPage() {
           </Card>
 
           <section>
-            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Journey timeline</h2>
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Raw timeline (events)
+            </h2>
             <TrackingTimeline items={timelineItems} />
           </section>
         </>
+      ) : null}
+
+      {photoPreview ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          aria-label="Close photo"
+          onClick={() => setPhotoPreview(null)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={photoPreview}
+            alt="Proof"
+            className="max-h-[90vh] max-w-full rounded-lg object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </button>
       ) : null}
     </div>
   )

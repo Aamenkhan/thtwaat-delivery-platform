@@ -79,7 +79,7 @@ export async function timelineByTrackingPublicId(trackingPublicId: string) {
   return timelineByPublicId(ship.order.publicId)
 }
 
-/** Public tracking: CUID `trackingPublicId` or branded `trackingNumber` (TW-…). */
+/** Public tracking: CUID `trackingPublicId` or branded `trackingNumber` (TW-…), or `Order.publicId`. */
 export async function timelineByTrackingRef(ref: string) {
   const byPublic = await prisma.shipment.findUnique({
     where: { trackingPublicId: ref },
@@ -92,6 +92,12 @@ export async function timelineByTrackingRef(ref: string) {
     include: { order: true },
   })
   if (byNum?.order) return timelineByPublicId(byNum.order.publicId)
+
+  const byOrderPublic = await prisma.order.findUnique({
+    where: { publicId: ref },
+    select: { publicId: true },
+  })
+  if (byOrderPublic) return timelineByPublicId(byOrderPublic.publicId)
 
   throw new HttpError(404, 'Tracking id not found')
 }

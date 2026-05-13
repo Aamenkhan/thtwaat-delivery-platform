@@ -12,10 +12,14 @@ function pepper() {
   return process.env.OTP_PEPPER ?? 'dev-pepper-change-me'
 }
 
-function hashOtp(code: string, phone: string) {
+export function hashOtpCode(code: string, phone: string) {
   return createHash('sha256')
     .update(`${pepper()}:${phone}:${code}`)
     .digest('hex')
+}
+
+function hashOtp(code: string, phone: string) {
+  return hashOtpCode(code, phone)
 }
 
 function safeEq(a: string, b: string) {

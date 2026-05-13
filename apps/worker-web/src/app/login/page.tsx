@@ -152,6 +152,12 @@ export default function WorkerLoginPage() {
         <Button variant="outline" className="mt-4 w-full" asChild>
           <Link href="/dashboard">Dashboard</Link>
         </Button>
+        <p className="mt-3 text-center text-sm text-muted-foreground">
+          नया worker?{' '}
+          <Link href="/register" className="text-primary underline">
+            रजिस्टर
+          </Link>
+        </p>
       </div>
       {sellerHref && adminHref ? (
         <p className="text-center text-xs text-muted-foreground">

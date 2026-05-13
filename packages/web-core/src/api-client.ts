@@ -191,6 +191,8 @@ export async function registerRequest(input: {
   phone?: string
   companyName?: string
   fullName?: string
+  /** Defaults to SELLER for backwards compatibility. */
+  role?: string
 }): Promise<{
   user: { id: string; email: string; role: string }
   organizationId?: string | null
@@ -199,13 +201,14 @@ export async function registerRequest(input: {
   refreshToken?: string
 }> {
   const base = getApiBaseUrl()
+  const { role, ...rest } = input
   const res = await fetch(`${base}/v1/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({
-      ...input,
-      role: 'SELLER',
+      ...rest,
+      role: role ?? 'SELLER',
     }),
   })
   const parsed = (await parseBody(res)) as {

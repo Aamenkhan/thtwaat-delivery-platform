@@ -1,3 +1,4 @@
+import { OrderType } from '@prisma/client'
 import { z } from 'zod'
 
 export const parcelTypeEnum = z.enum([
@@ -45,4 +46,6 @@ export const createPartnerOrderBody = z.object({
   deliveryPincode: z.string().length(6).optional(),
   /** Express uses higher multipliers on India pricing engine. */
   express: z.boolean().optional(),
+  /** When set, overrides `mapParcelToOrderType` (e.g. BUS_PARCEL for inter-city). */
+  orderType: z.nativeEnum(OrderType).optional(),
 })

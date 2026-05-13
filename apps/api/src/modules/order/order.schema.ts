@@ -10,6 +10,10 @@ export const createOrderBody = z.object({
     lat: z.number(),
     lng: z.number(),
   }),
+  /** When `deliveryCity` is omitted, API may fill city/state from this pincode. */
+  deliveryPincode: z.string().length(6).optional(),
+  deliveryCity: z.string().optional(),
+  deliveryState: z.string().optional(),
 })
 
 export const assignSourceHubBody = z.object({

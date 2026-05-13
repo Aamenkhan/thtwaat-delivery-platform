@@ -11,9 +11,10 @@ function graphBase(): string {
 }
 
 export function isWhatsAppConfigured(): boolean {
-  return Boolean(
-    process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID
-  )
+  const token =
+    process.env.WHATSAPP_ACCESS_TOKEN?.trim() ||
+    process.env.WABUSINESS_TOKEN?.trim()
+  return Boolean(token && process.env.WHATSAPP_PHONE_NUMBER_ID)
 }
 
 /** E.164 without + prefix (Meta expects digits only). */
@@ -21,11 +22,13 @@ export async function sendWhatsAppText(params: {
   toDigits: string
   body: string
 }): Promise<void> {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN
+  const token =
+    process.env.WHATSAPP_ACCESS_TOKEN?.trim() ||
+    process.env.WABUSINESS_TOKEN?.trim()
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID
   if (!token || !phoneNumberId) {
     console.warn(
-      '[whatsapp] Skip send: set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID to enable'
+      '[whatsapp] Skip send: set WHATSAPP_ACCESS_TOKEN or WABUSINESS_TOKEN, plus WHATSAPP_PHONE_NUMBER_ID'
     )
     return
   }

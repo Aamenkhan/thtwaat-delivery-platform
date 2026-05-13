@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { OrderStatus, Role } from '@prisma/client'
+import { OrderStatus, Role, ScanEvent } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { HttpError } from '../../lib/http-error.js'
 import { domainEvents } from '../../lib/events.js'
 import { allocTrackingNumber } from '../../lib/tracking-number.js'
+import { lookupIndiaPostalPincode } from '../../lib/india-postal-pincode.js'
 import { dispatchPlatformWebhook } from '../../lib/webhooks/platform-dispatch.js'
 import type { createOrderBody, assignSourceHubBody, returnOrderBody } from './order.schema.js'
 import type { z } from 'zod'
@@ -26,6 +27,7 @@ export async function createOrderAsSeller(
         destinationAddress: input.destination.address,
         destinationLat: input.destination.lat,
         destinationLng: input.destination.lng,
+        deliveryPincode: input.deliveryPincode ?? undefined,
         status: OrderStatus.CREATED,
       },
     })
@@ -92,7 +94,29 @@ export async function createOrder(
     throw new HttpError(400, 'sellerId is required')
   }
 
-  return createOrderAsSeller(sellerId, input)
+  let resolved: z.infer<typeof createOrderBody> = input
+  if (
+    !input.deliveryCity?.trim() &&
+    input.deliveryPincode &&
+    input.deliveryPincode.length === 6
+  ) {
+    const geo = await lookupIndiaPostalPincode(input.deliveryPincode)
+    if (geo) {
+      resolved = {
+        ...input,
+        deliveryCity: geo.city,
+        deliveryState: geo.state,
+        destination: {
+          ...input.destination,
+          address:
+            input.destination.address?.trim() ||
+            `${geo.area}, ${geo.city}, ${geo.state}`,
+        },
+      }
+    }
+  }
+
+  return createOrderAsSeller(sellerId, resolved)
 }
 
 export async function assignSourceHub(
@@ -122,6 +146,18 @@ export async function requestReturn(
   if (!order) throw new HttpError(404, 'Order not found')
   if (order.status !== OrderStatus.DELIVERED) {
     throw new HttpError(400, 'Returns only after DELIVERED')
+  }
+  if (order.returnInitiated) {
+    throw new HttpError(400, 'Return already requested for this order')
+  }
+
+  const deliveredScan = await prisma.scanLog.findFirst({
+    where: { orderId: order.id, event: ScanEvent.DELIVERED },
+    orderBy: { scannedAt: 'desc' },
+  })
+  const anchor = deliveredScan?.scannedAt ?? order.updatedAt
+  if (Date.now() - new Date(anchor).getTime() > 48 * 3600 * 1000) {
+    throw new HttpError(400, 'Return window closed (48 hours after delivery)')
   }
 
   const updated = await prisma.$transaction(async (tx) => {
