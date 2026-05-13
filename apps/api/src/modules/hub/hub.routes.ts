@@ -8,6 +8,7 @@ import {
   assignRouteBody,
 } from './hub.schema.js'
 import * as ctrl from './hub.controller.js'
+import { hubProfileRouter } from '../hub-profile/hub-profile.routes.js'
 import { Role } from '@prisma/client'
 
 const r = Router()
@@ -43,6 +44,13 @@ r.post(
   requireRole(Role.ADMIN, Role.SUPER_ADMIN, Role.HUB, Role.HUB_MANAGER),
   validateBody(assignRouteBody),
   ctrl.assignRoute
+)
+
+r.use(
+  '/:hubId',
+  requireAuth,
+  requireRole(Role.SUPER_ADMIN, Role.ADMIN, Role.HUB_MANAGER),
+  hubProfileRouter
 )
 
 export const hubRouter = r

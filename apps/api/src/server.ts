@@ -26,7 +26,7 @@ function assertPostgresDatabaseUrl() {
       '[startup] FATAL: DATABASE_URL must be a real PostgreSQL URL starting with postgresql:// or postgres://'
     )
     console.error(
-      '[startup] Neon/Postgres: paste the full connection string from your provider (not placeholder text).'
+      '[startup] Postgres: paste the full connection string from your provider (e.g. Supabase → Database URI), not placeholder text.'
     )
     process.exit(1)
   }

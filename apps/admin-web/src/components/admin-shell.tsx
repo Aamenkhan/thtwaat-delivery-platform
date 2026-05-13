@@ -34,6 +34,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
+import { HubSwitcher } from './hub-switcher'
 
 const nav = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
@@ -77,7 +78,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }
 
   const headerRight = (
-    <DropdownMenu>
+    <div className="flex items-center gap-2">
+      <HubSwitcher />
+      <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="subtle" size="sm" className="gap-2">
           <User className="size-4" />
@@ -91,8 +94,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <LogOut className="mr-2 size-4" />
           Log out
         </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
 
   return (
@@ -105,9 +109,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
         nav={nav}
         headerRight={headerRight}
         mobileNav={nav.filter((n) =>
-          ['/dashboard', '/dashboard/shipments', '/dashboard/live', '/dashboard/analytics', '/dashboard/sellers'].includes(
-            n.href
-          )
+          [
+            '/dashboard',
+            '/dashboard/shipments',
+            '/dashboard/hubs',
+            '/dashboard/live',
+            '/dashboard/analytics',
+            '/dashboard/sellers',
+          ].includes(n.href)
         )}
       >
         {children}

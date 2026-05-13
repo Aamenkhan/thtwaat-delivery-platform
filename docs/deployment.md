@@ -1,27 +1,31 @@
-# Production deployment (Vercel + Railway + PostgreSQL)
+# Production deployment (Vercel + Render + Supabase)
 
 This monolith API (`apps/api`) serves REST on HTTP and Socket.IO on the **same** Node process. Frontends are Next.js apps that call the API with JWTs stored in `localStorage` (demo); harden with httpOnly cookies and CSRF as you mature.
+
+**Recommended stack for this repo:** **Supabase** (managed PostgreSQL + optional Storage), **Render** (API + optional worker), **Vercel** (Next.js apps). Use **pgAdmin 4** (or any Postgres client) against the same `DATABASE_URL` from the Supabase dashboard for browsing and ad-hoc SQL — it is not a separate database, only a UI.
 
 ## Architecture
 
 | Layer | Suggested host | Notes |
 |--------|-----------------|------|
-| PostgreSQL | Railway Postgres (or Neon, RDS) | Set `DATABASE_URL` on API service |
-| Redis | Railway Redis | Optional; queues + rate limits |
-| API + Socket.IO | **Railway** one service | Start command `node apps/api/dist/server.js` after `pnpm --filter @repo/api build` |
-| Seller UI | **Vercel** project → `apps/seller-web` | Root directory + install/build filters |
-| Admin UI | Vercel second project → `apps/admin-web` | Same pattern |
-| Worker UI | Vercel third project → `apps/worker-web` | Mobile-friendly field flows |
+| PostgreSQL | **Supabase** (project → Database → connection string) | Set `DATABASE_URL` on the API. Use the **pooler** URI for app traffic if you use Prisma with `DIRECT_URL` for migrations (see Supabase + Prisma docs). Add `?sslmode=require` if required. |
+| Redis | Render Redis, Upstash, or self-hosted | Optional; queues + rate limits |
+| API + Socket.IO | **Render** Web Service | Start after `pnpm --filter @repo/api build` |
+| Object storage (hub photos, etc.) | **Supabase Storage** | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET` on the API |
+| Seller / Admin / Worker UI | **Vercel** (one project per app) | Root directory + install/build from monorepo root |
+
+**Alternatives (also valid):** any managed Postgres (RDS, Neon, Railway Postgres, etc.) and any host for the API (Railway, Fly, etc.) — Prisma only needs a real `postgresql://` URL.
 
 ## Environment variables
 
-### API (Railway)
+### API (Render)
 
 | Variable | Example |
 |----------|---------|
 | `NODE_ENV` | `production` |
 | `PORT` | Leave unset on **Render** (the platform injects `PORT` automatically). Do not type `3001` unless you know you need it. |
-| `DATABASE_URL` | `postgresql://…` (**required**; add `?sslmode=require` if your provider needs TLS) |
+| `DATABASE_URL` | `postgresql://…` from **Supabase → Database** (**required**; add `?sslmode=require` if your provider needs TLS) |
+| `DIRECT_URL` | Optional; non-pooler URL for Prisma migrations when using Supabase pooler (see Prisma docs) |
 | `REDIS_URL` | `redis://…` (optional). If you are not using Redis, **delete** this variable — do not set it to `disabled` (older builds treated that as a hostname). |
 | `JWT_SECRET` | Long random string (**required** — without it login/register return 500) |
 | `CORS_ORIGIN` | `https://seller.example.com,https://admin.example.com,https://worker.example.com` |
@@ -34,6 +38,9 @@ This monolith API (`apps/api`) serves REST on HTTP and Socket.IO on the **same**
 | `RAZORPAY_KEY_ID` | `rzp_test_…` or `rzp_live_…` (Dashboard → API Keys) |
 | `RAZORPAY_KEY_SECRET` | Secret key for server-side order creation and signature verification |
 | `RAZORPAY_WEBHOOK_SECRET` | Webhook signing secret from Razorpay Dashboard (path `/v1/integrations/razorpay/webhook`) |
+| `SUPABASE_URL` | `https://<project>.supabase.co` (for Storage signed uploads) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key (**server only**) |
+| `SUPABASE_STORAGE_BUCKET` | e.g. `thtwaat` |
 
 After changing Prisma models for payments, run migrations (or `prisma db push` in dev) so `RazorpayPayment`, `SellerSubscription`, and `Order.shippingPaidAt` exist.
 
@@ -43,11 +50,11 @@ Customer WhatsApp messages are queued as `IntegrationJob` rows (`WHATSAPP_NOTIFY
 
 | Variable | Purpose |
 |----------|---------|
-| `NEXT_PUBLIC_API_URL` | Public HTTPS URL of the Railway API |
+| `NEXT_PUBLIC_API_URL` | Public HTTPS URL of the **Render** API |
 | `NEXT_PUBLIC_SOCKET_URL` | Same as API if Socket.IO is colocated (default) |
 | `NEXT_PUBLIC_RAZORPAY_KEY_ID` | Same publishable Key ID as `RAZORPAY_KEY_ID` so Checkout.js can open (test: `rzp_test_…`) |
 
-Do **not** expose `JWT_SECRET`, `DATABASE_URL`, or `RAZORPAY_KEY_SECRET` to the browser.
+Do **not** expose `JWT_SECRET`, `DATABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, or `RAZORPAY_KEY_SECRET` to the browser.
 
 ## Vercel (Next.js)
 
@@ -58,15 +65,15 @@ Do **not** expose `JWT_SECRET`, `DATABASE_URL`, or `RAZORPAY_KEY_SECRET` to the 
 
 Repeat per app with different root directories or use a single Vercel monorepo with multiple projects.
 
-## Railway / Render (API)
+## Render (API)
 
 Use the **repository root** as the service root so `pnpm` workspaces resolve. The `@repo/api` **build** script runs `prisma generate` before `tsc`, so you do not need a separate generate step unless you prefer one.
 
-1. New service from repo; **build** with something like:  
+1. New Web Service from repo; **build** with something like:  
    `corepack enable && corepack prepare pnpm@9.15.0 --activate && pnpm install --frozen-lockfile && pnpm --filter @repo/api run build`
 2. **Start**: `pnpm --filter @repo/api start` (or `node apps/api/dist/server.js` from repo root).
 3. Set **`CORS_ORIGIN`** on the API to a comma-separated list of your deployed Next.js origins (scheme + host, no path), e.g. `https://seller.vercel.app,https://admin.vercel.app,https://worker.vercel.app`. If you omit it, Express and Socket.IO reflect the browser `Origin` header, which often works but is looser than an explicit allowlist.
-4. Attach **PostgreSQL** plugin and copy connection string into `DATABASE_URL`.
+4. Set **`DATABASE_URL`** (and `DIRECT_URL` if using Supabase pooler + Prisma migrate) from the Supabase dashboard — not Neon unless you chose Neon as your Postgres host.
 5. Run migrations once against production: from a shell with `DATABASE_URL` set,  
    `pnpm exec prisma migrate deploy --schema packages/db/prisma/schema.prisma`  
    (or add a Render **Shell** / release command). Without migrated tables, auth routes can fail with **500 / Internal server error**.
@@ -99,7 +106,8 @@ Optional: `WORKER_SEED_HUB_CODE=BLR_CC` (default), `WORKER_SEED_DISPLAY_NAME`, `
 
 ## Database
 
-- Use **managed PostgreSQL**; enable TLS.
+- Use **Supabase Postgres** (or another managed Postgres); enable TLS.
+- **pgAdmin 4:** create a server using the same host/port/user/password as in `DATABASE_URL` (from Supabase **Database** → connection parameters). This does not replace Supabase; it is only a management UI.
 - Run `prisma migrate deploy` in release phase, not only on developer laptops.
 
 ## Scaling notes

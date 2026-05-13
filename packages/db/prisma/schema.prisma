@@ -277,6 +277,11 @@ model Hub {
   routesTo             InterHubRoute[]      @relation("RouteDest")
   servicePincodes      PincodeDirectory[]   @relation("PincodeServiceHub")
   workersHome          Worker[]             @relation("WorkerHomeHub")
+  hubProfile           HubProfile?
+  busServicePartners   BusServicePartner[]
+  transportPartners    TransportPartner[]
+  partnerTruckBookings PartnerTruckBooking[] @relation("HubPartnerTruckBookings")
+  hubWorkerAssignments HubWorkerAssignment[]
 }
 
 /// Scheduled lane between two hubs (surface / air trunk).
@@ -374,7 +379,8 @@ model Worker {
   pickupForOrders  Order[]          @relation("OrderPickupWorker")
   scanLogs         ScanLog[]
   earnings         WorkerEarning[]
-  workerLocations  WorkerLocation[]
+  workerLocations      WorkerLocation[]
+  hubWorkerAssignments HubWorkerAssignment[]
 
   @@index([homeHubId])
 }
@@ -451,6 +457,9 @@ model Order {
   busTripId String?
   busTrip   BusTrip? @relation(fields: [busTripId], references: [id], onDelete: SetNull)
 
+  busServicePartnerId String?
+  busServicePartner   BusServicePartner? @relation(fields: [busServicePartnerId], references: [id], onDelete: SetNull)
+
   returnInitiated Boolean @default(false)
 
   /// When seller completed Razorpay checkout for quoted shipment fee (label / logistics).
@@ -475,6 +484,7 @@ model Order {
   @@index([sellerId, status])
   @@index([qrCode])
   @@index([status, updatedAt])
+  @@index([busServicePartnerId])
 }
 
 /// Line items for manifests, insurance, and weight pricing.
@@ -1020,4 +1030,140 @@ model WebhookDeliveryLog {
   createdAt      DateTime @default(now())
 
   @@index([event, createdAt])
+}
+
+enum HubGigRole {
+  PICKUP
+  DELIVERY
+}
+
+enum TruckOwnership {
+  OWN
+  COMMISSION
+}
+
+enum PartnerTruckBookingStatus {
+  REQUESTED
+  CONFIRMED
+  LOADING
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+/// Extended ops profile for a hub (admin hub console).
+model HubProfile {
+  id           String   @id @default(cuid())
+  hubId        String   @unique
+  hub          Hub      @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  photoUrl     String?
+  description  String?
+  managerName  String
+  managerPhone String
+  address      String
+  city         String
+  state        String
+  pincode      String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model BusServicePartner {
+  id             String   @id @default(cuid())
+  hubId          String
+  hub            Hub      @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  driverName     String
+  driverPhone    String
+  busNumber      String
+  busType        String
+  routeFrom      String
+  routeTo        String
+  departureTimes String[]
+  pricePerParcel Float    @default(40)
+  maxParcels     Int      @default(50)
+  photoUrl       String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  parcels Order[]
+
+  @@unique([hubId, busNumber])
+  @@index([hubId])
+}
+
+model TransportPartner {
+  id          String   @id @default(cuid())
+  hubId       String
+  hub         Hub      @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  ownerName   String
+  ownerPhone  String
+  ownerPhone2 String?
+  address     String
+  city        String
+  photoUrl    String?
+  isVerified  Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  trucks Truck[]
+
+  @@index([hubId])
+}
+
+model Truck {
+  id                   String             @id @default(cuid())
+  transportPartnerId   String
+  partner              TransportPartner   @relation(fields: [transportPartnerId], references: [id], onDelete: Cascade)
+  truckNumber          String             @unique
+  truckType            String
+  capacityTons         Float
+  photoUrl             String?
+  ownershipType        TruckOwnership     @default(OWN)
+  commissionPercent    Float?
+  isActive             Boolean            @default(true)
+  createdAt            DateTime           @default(now())
+
+  bookings PartnerTruckBooking[]
+
+  @@index([transportPartnerId])
+}
+
+/// Hub-initiated truck bookings (distinct from seller `TruckBooking` load requests).
+model PartnerTruckBooking {
+  id              String                    @id @default(cuid())
+  truckId         String
+  truck           Truck                     @relation(fields: [truckId], references: [id], onDelete: Restrict)
+  bookedByHubId   String
+  bookedByHub     Hub                       @relation("HubPartnerTruckBookings", fields: [bookedByHubId], references: [id], onDelete: Restrict)
+  customerName    String
+  customerPhone   String
+  pickupAddress   String
+  deliveryAddress String
+  goodsType       String
+  weightTons      Float
+  agreedPrice     Float
+  appCommission   Float
+  status          PartnerTruckBookingStatus @default(REQUESTED)
+  scheduledDate   DateTime
+  notes           String?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  @@index([truckId])
+  @@index([bookedByHubId])
+}
+
+model HubWorkerAssignment {
+  id        String     @id @default(cuid())
+  hubId     String
+  hub       Hub        @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  workerId  String
+  worker    Worker     @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  gigRole   HubGigRole
+  createdAt DateTime   @default(now())
+
+  @@unique([hubId, workerId])
+  @@index([workerId])
 }

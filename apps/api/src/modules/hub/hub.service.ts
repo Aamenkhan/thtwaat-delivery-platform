@@ -15,7 +15,12 @@ export async function createHub(input: z.infer<typeof createHubBody>) {
 }
 
 export async function listHubs() {
-  return prisma.hub.findMany({ orderBy: { name: 'asc' } })
+  return prisma.hub.findMany({
+    orderBy: { name: 'asc' },
+    include: {
+      hubProfile: { select: { isActive: true } },
+    },
+  })
 }
 
 export async function updateZone(hubId: string, input: z.infer<typeof zoneBody>) {

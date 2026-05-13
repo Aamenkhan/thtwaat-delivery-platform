@@ -12,6 +12,7 @@ import {
   type ColDef,
 } from '../../../components/ui-kit'
 import { Building2, MapPin } from 'lucide-react'
+import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { PincodeInput } from '../../../components/PincodeInput'
@@ -26,6 +27,7 @@ type Hub = {
   hubType: string
   latitude: number
   longitude: number
+  hubProfile?: { isActive: boolean } | null
 }
 
 export default function HubsPage() {
@@ -127,6 +129,15 @@ export default function HubsPage() {
         <span className="font-mono text-xs text-muted-foreground">
           {h.latitude.toFixed(3)}, {h.longitude.toFixed(3)}
         </span>
+      ),
+    },
+    {
+      key: 'open',
+      header: 'Console',
+      render: (h) => (
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/dashboard/hubs/${h.id}`}>Open</Link>
+        </Button>
       ),
     },
   ]

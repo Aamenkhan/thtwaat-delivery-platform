@@ -29,6 +29,7 @@ import { apiV1Router } from './routes/api-v1.routes.js'
 import { adminLogisticsRouter } from './modules/admin-logistics/admin-logistics.routes.js'
 import { adminShipmentsRouter } from './modules/admin-shipments/admin-shipments.routes.js'
 import { adminOpsRouter } from './modules/admin-ops/admin-ops.routes.js'
+import { adminStorageRouter } from './modules/admin-storage/admin-storage.routes.js'
 import { paymentsSellerRouter } from './modules/payments/payments.routes.js'
 import { razorpayWebhookRouter } from './modules/payments/razorpay.webhook.js'
 import { pingRedis } from './lib/redis.js'
@@ -93,6 +94,7 @@ export function createApp() {
   app.use('/v1/admin/logistics', adminLogisticsRouter)
   app.use('/v1/admin/shipments', adminShipmentsRouter)
   app.use('/v1/admin/ops', adminOpsRouter)
+  app.use('/v1/admin/storage', adminStorageRouter)
   app.use('/v1/hubs', hubRouter)
   app.use('/v1/pricing', pricingRouter)
   app.use('/v1/workers', workerRouter)
