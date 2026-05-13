@@ -1,6 +1,7 @@
 'use client'
 
 import { apiFetch, getApiBaseUrl } from '@repo/web-core/api'
+import { readTokens } from '@repo/web-core/auth-storage'
 import { createRealtimeSocket, subscribeOrderStatus } from '@repo/web-core/socket'
 import { RazorpayCheckoutTrigger } from '../../../../components/razorpay-checkout-trigger'
 import {
@@ -198,6 +199,31 @@ function buildTimelineItems(timeline: TimelineItem[]): TrackingTimelineItem[] {
   })
 }
 
+async function downloadSellerOrderQrSvg(orderPublicId: string) {
+  const tok = readTokens()?.accessToken
+  if (!tok) throw new Error('Not signed in')
+  const res = await fetch(
+    `${getApiBaseUrl()}/v1/seller/shipments/${encodeURIComponent(orderPublicId)}/qr.svg`,
+    {
+      headers: { Authorization: `Bearer ${tok}` },
+      credentials: 'include',
+    }
+  )
+  if (!res.ok) {
+    const t = await res.text().catch(() => '')
+    throw new Error(t.slice(0, 120) || `HTTP ${res.status}`)
+  }
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `shipment-${orderPublicId}.svg`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export default function TrackingPage() {
   const params = useParams()
   const publicId = params.publicId as string
@@ -205,6 +231,7 @@ export default function TrackingPage() {
   const [live, setLive] = useState<string | null>(null)
   const [payMsg, setPayMsg] = useState<string | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [qrDownloading, setQrDownloading] = useState(false)
 
   const q = useQuery({
     queryKey: ['tracking', publicId],
@@ -309,9 +336,33 @@ export default function TrackingPage() {
           title="Shipment journey"
           description="Unified scan trail, pricing signals, and proof — optimized for mobile field teams and seller ops."
           actions={
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/dashboard/shipments">Back to list</Link>
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/dashboard/shipments">Back to list</Link>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!publicId || qrDownloading}
+                onClick={() => {
+                  void (async () => {
+                    if (!publicId) return
+                    setQrDownloading(true)
+                    try {
+                      await downloadSellerOrderQrSvg(publicId)
+                      setLive(null)
+                    } catch (e) {
+                      setLive(e instanceof Error ? e.message : 'QR download failed')
+                    } finally {
+                      setQrDownloading(false)
+                    }
+                  })()
+                }}
+              >
+                {qrDownloading ? 'Downloading…' : 'Download QR (SVG)'}
+              </Button>
+            </div>
           }
         />
         <p className="-mt-4 font-mono text-xs text-muted-foreground break-all">{publicId}</p>

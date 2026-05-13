@@ -159,7 +159,7 @@ export function AppShell({
         className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-border/70 bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl lg:hidden"
         aria-label="Mobile"
       >
-        {bottom.slice(0, 5).map((item) => (
+        {bottom.slice(0, Math.min(7, bottom.length)).map((item) => (
           <NavLink key={item.href} item={item} compact />
         ))}
       </nav>

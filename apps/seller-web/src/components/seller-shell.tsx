@@ -20,6 +20,7 @@ import {
   LayoutDashboard,
   LogOut,
   Package,
+  Plug,
   RotateCcw,
   Sparkles,
   User,
@@ -34,9 +35,20 @@ const nav = [
   { href: '/dashboard/shipments', label: 'Shipments', icon: Package },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/dashboard/returns', label: 'Returns', icon: RotateCcw },
+  { href: '/dashboard/integrations', label: 'Integrations', icon: Plug },
   { href: '/dashboard/wallet', label: 'Wallet', icon: CreditCard },
   { href: '/dashboard/plans', label: 'Plans', icon: Sparkles },
 ]
+
+const mobileNavHrefs = [
+  '/dashboard',
+  '/dashboard/shipments',
+  '/dashboard/returns',
+  '/dashboard/integrations',
+  '/dashboard/wallet',
+  '/dashboard/analytics',
+  '/dashboard/plans',
+] as const
 
 export function SellerShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
@@ -58,6 +70,18 @@ export function SellerShell({ children }: { children: ReactNode }) {
         onSelect: () => router.push('/dashboard/shipments/new'),
       },
       { id: 'analytics', label: 'Analytics', group: 'Navigate', onSelect: () => router.push('/dashboard/analytics') },
+      {
+        id: 'returns',
+        label: 'Returns',
+        group: 'Navigate',
+        onSelect: () => router.push('/dashboard/returns'),
+      },
+      {
+        id: 'integrations',
+        label: 'Integrations',
+        group: 'Navigate',
+        onSelect: () => router.push('/dashboard/integrations'),
+      },
       { id: 'wallet', label: 'Wallet & payouts', group: 'Navigate', onSelect: () => router.push('/dashboard/wallet') },
       { id: 'plans', label: 'Subscription plans', group: 'Navigate', onSelect: () => router.push('/dashboard/plans') },
     ],
@@ -98,11 +122,7 @@ export function SellerShell({ children }: { children: ReactNode }) {
         Link={Link}
         nav={nav}
         headerRight={headerRight}
-        mobileNav={nav.filter((n) =>
-          ['/dashboard', '/dashboard/shipments', '/dashboard/wallet', '/dashboard/analytics', '/dashboard/plans'].includes(
-            n.href
-          )
-        )}
+        mobileNav={nav.filter((n) => mobileNavHrefs.includes(n.href as (typeof mobileNavHrefs)[number]))}
       >
         {children}
         <p className="mx-auto max-w-7xl px-4 pb-6 pt-0 text-center text-[10px] text-muted-foreground sm:px-6 lg:px-8">
