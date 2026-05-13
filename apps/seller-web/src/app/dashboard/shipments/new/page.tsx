@@ -200,6 +200,9 @@ export default function NewShipmentPage() {
       <p className="text-xs text-muted-foreground">
         Demo PINs (seeded): {DEMO_PINCODES}
       </p>
+      <p className="text-xs text-muted-foreground">
+        पिनकोड (6 अंक) डालने पर शहर/राज्य ऑटो आते हैं; पूरे पते से पिनकोड अभी ऑटो नहीं आता। बुकिंग के लिए वह PIN प्लेटफ़ॉर्म की सूची में होना चाहिए (नीचे डेमो PIN या DB seed)।
+      </p>
       <form className="flex flex-col gap-3 text-sm" onSubmit={submit}>
         <Field label="Customer name" v={form.customerName} onV={(v) => setForm({ ...form, customerName: v })} />
         <Field label="Customer phone" v={form.customerPhone} onV={(v) => setForm({ ...form, customerPhone: v })} />
@@ -228,7 +231,6 @@ export default function NewShipmentPage() {
             <option value="BUS_PARCEL">Bus parcel</option>
           </select>
         </label>
-        <Field label="Pickup address" v={form.pickupAddress} onV={(v) => setForm({ ...form, pickupAddress: v })} />
         <PincodeInput
           id="pickup-pin"
           fieldLabel="पिकअप पिनकोड"
@@ -243,6 +245,7 @@ export default function NewShipmentPage() {
             }))
           }
         />
+        <Field label="Pickup address" v={form.pickupAddress} onV={(v) => setForm({ ...form, pickupAddress: v })} />
         {form.pickupCity ? (
           <p className="text-xs text-muted-foreground">
             शहर: {form.pickupCity} · राज्य: {form.pickupState}
