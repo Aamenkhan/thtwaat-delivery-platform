@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { GeocodePincodeButton } from '../../../../components/GeocodePincodeButton'
+import { PlacesAddressAutocomplete } from '../../../../components/PlacesAddressAutocomplete'
 import { PincodeInput } from '../../../../components/PincodeInput'
 import type { PincodeLookupPayload } from '../../../../hooks/usePincodeLookup'
 
@@ -202,7 +203,7 @@ export default function NewShipmentPage() {
         Demo PINs (seeded): {DEMO_PINCODES}
       </p>
       <p className="text-xs text-muted-foreground">
-        पिनकोड (6 अंक) डालने पर शहर/राज्य ऑटो आते हैं; पूरे पते से पिनकोड अभी अपने आप नहीं आता — नीचे पते के नीचे वाला बटन दबाएँ। बुकिंग के लिए वह PIN प्लेटफ़ॉर्म की सूची में होना चाहिए (नीचे डेमो PIN या DB seed)।
+        पिनकोड (6 अंक) डालने पर शहर/राज्य ऑटो आते हैं। पते के लिए Google Places सुझाव (जब API key हो) या नीचे बटन से पिनकोड। बुकिंग के लिए PIN प्लेटफ़ॉर्म की सूची में होना चाहिए (डेमो PIN / DB seed)।
       </p>
       <form className="flex flex-col gap-3 text-sm" onSubmit={submit}>
         <Field label="Customer name" v={form.customerName} onV={(v) => setForm({ ...form, customerName: v })} />
@@ -251,7 +252,24 @@ export default function NewShipmentPage() {
             शहर: {form.pickupCity} · राज्य: {form.pickupState}
           </p>
         ) : null}
-        <Field label="Pickup address" v={form.pickupAddress} onV={(v) => setForm({ ...form, pickupAddress: v })} />
+        <PlacesAddressAutocomplete
+          label="Pickup address"
+          value={form.pickupAddress}
+          onChange={(v) => setForm((f) => ({ ...f, pickupAddress: v }))}
+          disabled={loading}
+          required
+          onPlaceResolved={(p) =>
+            setForm((f) => ({
+              ...f,
+              pickupAddress: p.formattedAddress ?? f.pickupAddress,
+              pickupPincode: p.pincode ?? f.pickupPincode,
+              pickupLat: p.lat != null ? String(p.lat) : f.pickupLat,
+              pickupLng: p.lng != null ? String(p.lng) : f.pickupLng,
+              pickupCity: p.city ?? f.pickupCity,
+              pickupState: p.state ?? f.pickupState,
+            }))
+          }
+        />
         <GeocodePincodeButton
           address={form.pickupAddress}
           disabled={loading}
@@ -276,7 +294,6 @@ export default function NewShipmentPage() {
               deliveryPincode: p.pincode,
               deliveryCity: p.city,
               deliveryState: p.state,
-              deliveryAddress: `${p.area}, ${p.city}, ${p.state}`,
             }))
           }
         />
@@ -285,10 +302,23 @@ export default function NewShipmentPage() {
             शहर: {form.deliveryCity} · राज्य: {form.deliveryState}
           </p>
         ) : null}
-        <Field
+        <PlacesAddressAutocomplete
           label="Delivery address"
-          v={form.deliveryAddress}
-          onV={(v) => setForm({ ...form, deliveryAddress: v })}
+          value={form.deliveryAddress}
+          onChange={(v) => setForm((f) => ({ ...f, deliveryAddress: v }))}
+          disabled={loading}
+          required
+          onPlaceResolved={(p) =>
+            setForm((f) => ({
+              ...f,
+              deliveryAddress: p.formattedAddress ?? f.deliveryAddress,
+              deliveryPincode: p.pincode ?? f.deliveryPincode,
+              deliveryLat: p.lat ?? f.deliveryLat,
+              deliveryLng: p.lng ?? f.deliveryLng,
+              deliveryCity: p.city ?? f.deliveryCity,
+              deliveryState: p.state ?? f.deliveryState,
+            }))
+          }
         />
         <GeocodePincodeButton
           address={form.deliveryAddress}
