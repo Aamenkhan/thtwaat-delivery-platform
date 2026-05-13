@@ -26,7 +26,10 @@ export function PincodeInput({
   const [successState, setSuccessState] = useState<string | null>(null)
   const [areaIndex, setAreaIndex] = useState(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastResolvedRef = useRef<string | null>(null)
+  /** Dedupe parent updates — avoid double notify (lookup effect + sync effect) causing re-render flicker. */
+  const lastNotifiedRef = useRef<string>('')
+  /** Pincode digits last successfully resolved by `lookup` (null = none yet). */
+  const resolvedForPinRef = useRef<string | null>(null)
   const onPincodeResolvedRef = useRef(onPincodeResolved)
   onPincodeResolvedRef.current = onPincodeResolved
 
@@ -39,7 +42,8 @@ export function PincodeInput({
       reset()
       setSuccessCity(null)
       setSuccessState(null)
-      lastResolvedRef.current = null
+      lastNotifiedRef.current = ''
+      resolvedForPinRef.current = null
       return
     }
     cancelLookupRef.current = false
@@ -50,21 +54,14 @@ export function PincodeInput({
         if (!r) {
           setSuccessCity(null)
           setSuccessState(null)
-          lastResolvedRef.current = null
+          lastNotifiedRef.current = ''
+          resolvedForPinRef.current = null
           return
         }
+        resolvedForPinRef.current = digits
         setSuccessCity(r.city)
         setSuccessState(r.state)
         setAreaIndex(0)
-        const area = r.areas[0] ?? ''
-        const payload: PincodeLookupPayload = {
-          pincode: digits,
-          city: r.city,
-          state: r.state,
-          area,
-        }
-        lastResolvedRef.current = `${digits}:${area}`
-        onPincodeResolvedRef.current?.(payload)
       })()
     }, 300)
     return () => {
@@ -77,10 +74,11 @@ export function PincodeInput({
     if (!successCity || !areas.length) return
     const digits = value.replace(/\D/g, '').slice(0, 6)
     if (digits.length !== 6) return
+    if (resolvedForPinRef.current != null && digits !== resolvedForPinRef.current) return
     const area = areas[areaIndex] ?? areas[0] ?? ''
-    const key = `${digits}:${area}`
-    if (lastResolvedRef.current === key) return
-    lastResolvedRef.current = key
+    const notifyKey = `${digits}|${successCity}|${successState ?? ''}|${area}`
+    if (notifyKey === lastNotifiedRef.current) return
+    lastNotifiedRef.current = notifyKey
     onPincodeResolvedRef.current?.({
       pincode: digits,
       city: successCity,
