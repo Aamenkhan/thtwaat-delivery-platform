@@ -55,8 +55,14 @@ export async function planRouteByPincode(
   originPin: string,
   destPin: string
 ): Promise<IndiaRoutePlan> {
-  const o = await pincodeSvc.lookupPincode(originPin)
-  const d = await pincodeSvc.lookupPincode(destPin)
+  const o = await pincodeSvc.findPincodeDirectory(originPin)
+  const d = await pincodeSvc.findPincodeDirectory(destPin)
+  if (!o || !d) {
+    throw new HttpError(
+      400,
+      'Both pincodes must exist in the directory for inter-hub route planning'
+    )
+  }
 
   const originHub = o.serviceHub
   const destHub = d.serviceHub

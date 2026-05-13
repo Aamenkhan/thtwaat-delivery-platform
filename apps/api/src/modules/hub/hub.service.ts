@@ -1,4 +1,4 @@
-import { OrderType, type Prisma } from '@prisma/client'
+import { OrderType, type Hub, type Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { HttpError } from '../../lib/http-error.js'
 import { distanceKm } from '../../lib/geo.js'
@@ -47,6 +47,64 @@ export async function nearestHub(input: z.infer<typeof nearestBody>) {
     }
   }
   return { hub: best, distanceKm: Math.round(bestD * 1000) / 1000 }
+}
+
+/**
+ * When pincode is not in the directory or coords are missing, still assign a hub
+ * (nearest by coordinates, city name match, or first hub).
+ */
+export async function resolveHubWithPincodeFallback(input: {
+  deliveryLat?: number | null
+  deliveryLng?: number | null
+  pickupLat?: number | null
+  pickupLng?: number | null
+  deliveryCity?: string | null
+  pickupCity?: string | null
+}): Promise<{ hub: Hub; distanceKm: number | null; reason: string }> {
+  const hubs = await prisma.hub.findMany({ orderBy: { createdAt: 'asc' } })
+  if (!hubs.length) {
+    throw new HttpError(400, 'No hub configured; seed a hub before creating orders')
+  }
+
+  const lat = input.pickupLat ?? input.deliveryLat
+  const lng = input.pickupLng ?? input.deliveryLng
+  if (lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)) {
+    const nh = await nearestHub({ lat, lng })
+    if (!nh.hub) {
+      return { hub: hubs[0]!, distanceKm: null, reason: 'nearest_fallback_empty' }
+    }
+    return { hub: nh.hub, distanceKm: nh.distanceKm, reason: 'nearest_by_coords' }
+  }
+
+  for (const c of [input.deliveryCity, input.pickupCity]) {
+    if (!c?.trim()) continue
+    const hint = c.trim().toLowerCase()
+    const cityHub = hubs.find((h) => h.city?.toLowerCase() === hint)
+    if (cityHub) {
+      return { hub: cityHub, distanceKm: null, reason: 'city_exact' }
+    }
+  }
+  for (const c of [input.deliveryCity, input.pickupCity]) {
+    if (!c?.trim()) continue
+    const hint = c.trim().toLowerCase()
+    const partial = hubs.find(
+      (h) =>
+        (h.city && h.city.toLowerCase().includes(hint)) ||
+        (h.city && hint.includes(h.city.toLowerCase()))
+    )
+    if (partial) {
+      return { hub: partial, distanceKm: null, reason: 'city_partial' }
+    }
+  }
+
+  console.warn(
+    '[booking] Unserviceable pincode or missing coordinates — assigning default hub',
+    {
+      pickupCity: input.pickupCity,
+      deliveryCity: input.deliveryCity,
+    }
+  )
+  return { hub: hubs[0]!, distanceKm: null, reason: 'first_active_hub' }
 }
 
 /** Suggest or bind a bus route between two hubs for an order. */

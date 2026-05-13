@@ -14,13 +14,17 @@ export const sellerWebCreateOrderBody = z
     /** Declared value in INR major units (stored as COD amount for pricing). */
     productValue: z.number().nonnegative(),
     deliveryAddress: z.string().min(1).max(500),
-    deliveryLat: z.number().min(-90).max(90),
-    deliveryLng: z.number().min(-180).max(180),
+    deliveryLat: z.number().min(-90).max(90).optional(),
+    deliveryLng: z.number().min(-180).max(180).optional(),
     deliveryPincode: z.string().length(6),
+    deliveryCity: z.string().max(120).optional(),
+    deliveryArea: z.string().max(200).optional(),
     pickupAddress: z.string().min(1).max(500),
     pickupLat: z.number().min(-90).max(90).optional(),
     pickupLng: z.number().min(-180).max(180).optional(),
     pickupPincode: z.string().length(6),
+    pickupCity: z.string().max(120).optional(),
+    pickupArea: z.string().max(200).optional(),
     orderType: sellerWebOrderTypeEnum,
   })
   .superRefine((d, ctx) => {

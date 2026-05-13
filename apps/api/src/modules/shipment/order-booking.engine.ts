@@ -12,7 +12,7 @@ import { prisma } from '../../lib/prisma.js'
 import { domainEvents } from '../../lib/events.js'
 import { HttpError } from '../../lib/http-error.js'
 import { allocTrackingNumber } from '../../lib/tracking-number.js'
-import { nearestHub } from '../hub/hub.service.js'
+import { nearestHub, resolveHubWithPincodeFallback } from '../hub/hub.service.js'
 import { quote } from '../pricing/pricing.service.js'
 import { planRouteByPincode } from '../logistics/india-routing.service.js'
 import { quoteIndia } from '../logistics/india-pricing.service.js'
@@ -127,25 +127,52 @@ export async function runBookShipment(
   let hub: Hub
   let hubDistanceKm: number | null = null
   let routePlan: Awaited<ReturnType<typeof planRouteByPincode>> | null = null
-  let originPinRow: Awaited<ReturnType<typeof pincodeSvc.lookupPincode>> | null =
+  let originPinRow: Awaited<ReturnType<typeof pincodeSvc.findPincodeDirectory>> | null =
     null
-  let destPinRow: Awaited<ReturnType<typeof pincodeSvc.lookupPincode>> | null =
+  let destPinRow: Awaited<ReturnType<typeof pincodeSvc.findPincodeDirectory>> | null =
     null
 
   if (usePincode) {
-    originPinRow = await pincodeSvc.lookupPincode(input.pickupPincode!)
-    destPinRow = await pincodeSvc.lookupPincode(input.deliveryPincode!)
-    routePlan = await planRouteByPincode(
-      input.pickupPincode!,
-      input.deliveryPincode!
-    )
-    hub = await prisma.hub.findUniqueOrThrow({
-      where: { id: routePlan.sourceHubId },
-    })
-    hubDistanceKm = null
+    originPinRow = await pincodeSvc.findPincodeDirectory(input.pickupPincode!)
+    destPinRow = await pincodeSvc.findPincodeDirectory(input.deliveryPincode!)
+
+    if (originPinRow && destPinRow) {
+      routePlan = await planRouteByPincode(
+        input.pickupPincode!,
+        input.deliveryPincode!
+      )
+      hub = await prisma.hub.findUniqueOrThrow({
+        where: { id: routePlan.sourceHubId },
+      })
+      hubDistanceKm = null
+    } else {
+      console.warn('[booking] pincode not in directory — using fallback hub assignment', {
+        pickupPincode: input.pickupPincode,
+        deliveryPincode: input.deliveryPincode,
+        hadOriginRow: Boolean(originPinRow),
+        hadDestRow: Boolean(destPinRow),
+      })
+      const resolved = await resolveHubWithPincodeFallback({
+        deliveryLat: input.deliveryLat,
+        deliveryLng: input.deliveryLng,
+        pickupLat: input.pickupLat,
+        pickupLng: input.pickupLng,
+        deliveryCity: input.deliveryCity ?? null,
+        pickupCity: input.pickupCity ?? null,
+      })
+      hub = resolved.hub
+      hubDistanceKm = resolved.distanceKm
+      routePlan = null
+    }
   } else {
     const hubLat = input.pickupLat ?? input.deliveryLat
     const hubLng = input.pickupLng ?? input.deliveryLng
+    if (hubLat == null || hubLng == null || !Number.isFinite(hubLat) || !Number.isFinite(hubLng)) {
+      throw new HttpError(
+        400,
+        'Provide pickup/delivery coordinates, or both 6-digit pincodes'
+      )
+    }
     const nh = await nearestHub({
       lat: hubLat,
       lng: hubLng,
@@ -160,8 +187,8 @@ export async function runBookShipment(
     hubDistanceKm = nh.distanceKm
   }
 
-  const hubLat = input.pickupLat ?? input.deliveryLat
-  const hubLng = input.pickupLng ?? input.deliveryLng
+  const hubLat = input.pickupLat ?? input.deliveryLat ?? hub.latitude
+  const hubLng = input.pickupLng ?? input.deliveryLng ?? hub.longitude
 
   let pricingBreakdown: BookShipmentEngineResult['pricingBreakdown']
   if (usePincode && originPinRow && destPinRow) {
@@ -171,10 +198,16 @@ export async function runBookShipment(
       widthCm: input.dimensions?.widthCm,
       heightCm: input.dimensions?.heightCm,
       codAmountPaise: codAmountCents,
-      originLat: originPinRow.latitude ?? hub.latitude,
-      originLng: originPinRow.longitude ?? hub.longitude,
-      destLat: destPinRow.latitude ?? input.deliveryLat,
-      destLng: destPinRow.longitude ?? input.deliveryLng,
+      originLat: originPinRow.latitude ?? originPinRow.serviceHub.latitude,
+      originLng: originPinRow.longitude ?? originPinRow.serviceHub.longitude,
+      destLat:
+        destPinRow.latitude ??
+        input.deliveryLat ??
+        destPinRow.serviceHub.latitude,
+      destLng:
+        destPinRow.longitude ??
+        input.deliveryLng ??
+        destPinRow.serviceHub.longitude,
       originState: originPinRow.state,
       destState: destPinRow.state,
       destZoneClass: destPinRow.zoneClass,
@@ -188,7 +221,10 @@ export async function runBookShipment(
     pricingBreakdown = await quote({
       orderType,
       origin: { lat: hubLat, lng: hubLng },
-      destination: { lat: input.deliveryLat, lng: input.deliveryLng },
+      destination: {
+        lat: input.deliveryLat ?? hub.latitude,
+        lng: input.deliveryLng ?? hub.longitude,
+      },
       hubId: hub.id,
       weightKg: weightGrams / 1000,
     })

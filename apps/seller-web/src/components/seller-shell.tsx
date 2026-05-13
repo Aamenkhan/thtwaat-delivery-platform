@@ -105,6 +105,18 @@ export function SellerShell({ children }: { children: ReactNode }) {
         )}
       >
         {children}
+        <p className="mx-auto max-w-7xl px-4 pb-6 pt-0 text-center text-[10px] text-muted-foreground sm:px-6 lg:px-8">
+          © OpenStreetMap contributors — address search uses{' '}
+          <a
+            className="underline hover:text-foreground"
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Nominatim (OSM)
+          </a>
+          ; pin data via India Post directory mirrors.
+        </p>
       </AppShell>
     </>
   )

@@ -9,7 +9,8 @@ export const parcelTypeEnum = z.enum([
   'OTHER',
 ])
 
-export const createPartnerOrderBody = z.object({
+/** Shared partner booking shape (before `.superRefine`) so `shipment.schema` can `.omit()` safely. */
+export const partnerOrderBaseSchema = z.object({
   sellerId: z.string().min(1),
   customerName: z.string().min(1).max(200),
   customerPhone: z
@@ -20,9 +21,13 @@ export const createPartnerOrderBody = z.object({
   pickupAddress: z.string().min(1).max(500),
   pickupLat: z.number().min(-90).max(90).optional(),
   pickupLng: z.number().min(-180).max(180).optional(),
+  pickupCity: z.string().max(120).optional(),
+  pickupArea: z.string().max(200).optional(),
   deliveryAddress: z.string().min(1).max(500),
-  deliveryLat: z.number().min(-90).max(90),
-  deliveryLng: z.number().min(-180).max(180),
+  deliveryLat: z.number().min(-90).max(90).optional(),
+  deliveryLng: z.number().min(-180).max(180).optional(),
+  deliveryCity: z.string().max(120).optional(),
+  deliveryArea: z.string().max(200).optional(),
   parcelType: parcelTypeEnum,
   weight: z
     .object({
@@ -49,3 +54,35 @@ export const createPartnerOrderBody = z.object({
   /** When set, overrides `mapParcelToOrderType` (e.g. BUS_PARCEL for inter-city). */
   orderType: z.nativeEnum(OrderType).optional(),
 })
+
+export type PartnerGeoRefineInput = {
+  deliveryLat?: number | undefined
+  deliveryLng?: number | undefined
+  pickupPincode?: string | undefined
+  deliveryPincode?: string | undefined
+}
+
+export function refinePartnerDeliveryGeo(d: PartnerGeoRefineInput, ctx: z.RefinementCtx) {
+  const hasDelCoords =
+    d.deliveryLat != null &&
+    d.deliveryLng != null &&
+    Number.isFinite(d.deliveryLat) &&
+    Number.isFinite(d.deliveryLng)
+  const hasPins =
+    d.pickupPincode != null &&
+    d.pickupPincode.length === 6 &&
+    d.deliveryPincode != null &&
+    d.deliveryPincode.length === 6
+  if (!hasDelCoords && !hasPins) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        'Provide delivery latitude and longitude, or both 6-digit pickup and delivery pincodes',
+      path: ['deliveryLat'],
+    })
+  }
+}
+
+export const createPartnerOrderBody = partnerOrderBaseSchema.superRefine(
+  refinePartnerDeliveryGeo
+)

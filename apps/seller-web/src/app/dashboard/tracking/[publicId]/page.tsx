@@ -597,7 +597,7 @@ export default function TrackingPage() {
                 <MapPin className="size-4" />
                 Route preview
               </CardTitle>
-              <CardDescription>Drop-in Mapbox / Google Maps using last scan coordinates</CardDescription>
+              <CardDescription>Drop-in Mapbox or OSM map using last scan coordinates</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex aspect-[21/9] w-full items-center justify-center rounded-2xl border-2 border-dashed border-muted-foreground/25 bg-gradient-to-br from-muted/40 to-muted/10">

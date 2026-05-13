@@ -1,5 +1,8 @@
 import { z } from 'zod'
-import { createPartnerOrderBody } from '../api-orders/api-orders.schema.js'
+import {
+  partnerOrderBaseSchema,
+  refinePartnerDeliveryGeo,
+} from '../api-orders/api-orders.schema.js'
 
 export const structuredAddressSchema = z.object({
   label: z.string().max(120).optional(),
@@ -15,12 +18,13 @@ export const structuredAddressSchema = z.object({
   contactPhone: z.string().max(20).optional(),
 })
 
-export const bookSellerShipmentBody = createPartnerOrderBody
+export const bookSellerShipmentBody = partnerOrderBaseSchema
   .omit({ sellerId: true })
   .extend({
     structuredPickup: structuredAddressSchema.optional(),
     structuredDelivery: structuredAddressSchema.optional(),
   })
+  .superRefine(refinePartnerDeliveryGeo)
 
 export const listSellerShipmentsQuery = z.object({
   status: z.string().optional(),

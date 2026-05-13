@@ -11,18 +11,14 @@ export function normalizePincode(raw: string): string {
   return s
 }
 
-export async function lookupPincode(pincode: string) {
+/** Directory row for routing / pricing, or `null` if not seeded (booking may still proceed). */
+export async function findPincodeDirectory(pincode: string) {
   const pc = normalizePincode(pincode)
   const row = await prisma.pincodeDirectory.findUnique({
     where: { pincode: pc },
     include: { serviceHub: true },
   })
-  if (!row?.active) {
-    throw new HttpError(
-      404,
-      `Pincode ${pc} is not in the serviceable directory (run DB seed or use a seeded PIN).`
-    )
-  }
+  if (!row?.active) return null
   return row
 }
 

@@ -5,14 +5,13 @@ import { Button } from '@repo/ui'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { GeocodePincodeButton } from '../../../../components/GeocodePincodeButton'
-import { PlacesAddressAutocomplete } from '../../../../components/PlacesAddressAutocomplete'
+import { AddressInput } from '../../../../components/AddressInput'
 import { PincodeInput } from '../../../../components/PincodeInput'
 import type { PincodeLookupPayload } from '../../../../hooks/usePincodeLookup'
 
-/** Must match `PincodeDirectory` seed rows or booking returns 404. */
+/** Demo PINs used in DB seed examples — booking no longer fails if a PIN is missing from the directory. */
 const DEMO_PINCODES =
-  'Bengaluru 560001, 560103 · Mumbai 400001, 400053. Other 6-digit PINs must exist in the DB seed (Delhi 11xxxx not seeded by default).'
+  'Bengaluru 560001, 560103 · Mumbai 400001, 400053 — any valid 6-digit PIN can be booked.'
 
 type BookingSuccess = {
   order: { publicId: string; id: string }
@@ -59,14 +58,15 @@ export default function NewShipmentPage() {
     pickupLng: '' as string,
     pickupCity: '',
     pickupState: '',
+    pickupArea: '',
     deliveryAddress: 'Delivery address, Bengaluru',
-    deliveryLat: 12.97,
-    deliveryLng: 77.59,
+    deliveryLat: undefined as number | undefined,
+    deliveryLng: undefined as number | undefined,
     pickupPincode: '560001',
-    /** Must exist in DB seed (`PincodeDirectory`) — 560001 / 560103 are Bengaluru demo rows. */
     deliveryPincode: '560103',
     deliveryCity: '',
     deliveryState: '',
+    deliveryArea: '',
     orderType: 'LOCAL_DELIVERY' as 'LOCAL_DELIVERY' | 'BUS_PARCEL',
   })
 
@@ -104,14 +104,18 @@ export default function NewShipmentPage() {
           productName: form.productName,
           productWeight: form.weightGrams / 1000,
           productValue: form.productValue,
-          pickupAddress: form.pickupAddress,
+          pickupAddress: [form.pickupAddress, form.pickupArea].map((s) => s.trim()).filter(Boolean).join(', '),
           pickupLat,
           pickupLng,
           pickupPincode: form.pickupPincode,
-          deliveryAddress: form.deliveryAddress,
+          pickupCity: form.pickupCity.trim() || undefined,
+          pickupArea: form.pickupArea.trim() || undefined,
+          deliveryAddress: [form.deliveryAddress, form.deliveryArea].map((s) => s.trim()).filter(Boolean).join(', '),
           deliveryLat: form.deliveryLat,
           deliveryLng: form.deliveryLng,
           deliveryPincode: form.deliveryPincode,
+          deliveryCity: form.deliveryCity.trim() || undefined,
+          deliveryArea: form.deliveryArea.trim() || undefined,
           orderType: form.orderType,
         },
       })
@@ -203,7 +207,7 @@ export default function NewShipmentPage() {
         Demo PINs (seeded): {DEMO_PINCODES}
       </p>
       <p className="text-xs text-muted-foreground">
-        पिनकोड (6 अंक) डालने पर शहर/राज्य ऑटो आते हैं। पते के लिए Google Places सुझाव (जब API key हो) या नीचे बटन से पिनकोड। बुकिंग के लिए PIN प्लेटफ़ॉर्म की सूची में होना चाहिए (डेमो PIN / DB seed)।
+        पिनकोड: India Post (मुफ्त)। पता खोज: OpenStreetMap Nominatim (मुफ्त)। © OpenStreetMap योगदानकर्ता
       </p>
       <form className="flex flex-col gap-3 text-sm" onSubmit={submit}>
         <Field label="Customer name" v={form.customerName} onV={(v) => setForm({ ...form, customerName: v })} />
@@ -247,41 +251,32 @@ export default function NewShipmentPage() {
             }))
           }
         />
-        {form.pickupCity ? (
-          <p className="text-xs text-muted-foreground">
-            शहर: {form.pickupCity} · राज्य: {form.pickupState}
-          </p>
-        ) : null}
-        <PlacesAddressAutocomplete
+        <Field label="Pickup city" v={form.pickupCity} onV={(v) => setForm((f) => ({ ...f, pickupCity: v }))} />
+        <Field label="Pickup state" v={form.pickupState} onV={(v) => setForm((f) => ({ ...f, pickupState: v }))} />
+        <AddressInput
           label="Pickup address"
           value={form.pickupAddress}
           onChange={(v) => setForm((f) => ({ ...f, pickupAddress: v }))}
+          cityHint={form.pickupCity}
           disabled={loading}
           required
-          onPlaceResolved={(p) =>
+          onResolved={(h) =>
             setForm((f) => ({
               ...f,
-              pickupAddress: p.formattedAddress ?? f.pickupAddress,
-              pickupPincode: p.pincode ?? f.pickupPincode,
-              pickupLat: p.lat != null ? String(p.lat) : f.pickupLat,
-              pickupLng: p.lng != null ? String(p.lng) : f.pickupLng,
-              pickupCity: p.city ?? f.pickupCity,
-              pickupState: p.state ?? f.pickupState,
+              pickupAddress: h.displayName,
+              pickupPincode: h.pincode ?? f.pickupPincode,
+              pickupLat: Number.isFinite(h.lat) ? String(h.lat) : f.pickupLat,
+              pickupLng: Number.isFinite(h.lng) ? String(h.lng) : f.pickupLng,
+              pickupCity: h.city ?? f.pickupCity,
+              pickupState: h.state ?? f.pickupState,
             }))
           }
         />
-        <GeocodePincodeButton
-          address={form.pickupAddress}
-          disabled={loading}
-          contextLabel="पिकअप"
-          onResolved={(r) =>
-            setForm((f) => ({
-              ...f,
-              pickupPincode: r.pincode ?? f.pickupPincode,
-              pickupLat: r.lat != null ? String(r.lat) : f.pickupLat,
-              pickupLng: r.lng != null ? String(r.lng) : f.pickupLng,
-            }))
-          }
+        <Field
+          optional
+          label="क्षेत्र / locality (पिकअप, वैकल्पिक)"
+          v={form.pickupArea}
+          onV={(v) => setForm((f) => ({ ...f, pickupArea: v }))}
         />
         <PincodeInput
           id="delivery-pin"
@@ -297,46 +292,37 @@ export default function NewShipmentPage() {
             }))
           }
         />
-        {form.deliveryCity ? (
-          <p className="text-xs text-muted-foreground">
-            शहर: {form.deliveryCity} · राज्य: {form.deliveryState}
-          </p>
-        ) : null}
-        <PlacesAddressAutocomplete
+        <Field label="Delivery city" v={form.deliveryCity} onV={(v) => setForm((f) => ({ ...f, deliveryCity: v }))} />
+        <Field
+          label="Delivery state"
+          v={form.deliveryState}
+          onV={(v) => setForm((f) => ({ ...f, deliveryState: v }))}
+        />
+        <AddressInput
           label="Delivery address"
           value={form.deliveryAddress}
           onChange={(v) => setForm((f) => ({ ...f, deliveryAddress: v }))}
+          cityHint={form.deliveryCity}
           disabled={loading}
           required
-          onPlaceResolved={(p) =>
+          onResolved={(h) =>
             setForm((f) => ({
               ...f,
-              deliveryAddress: p.formattedAddress ?? f.deliveryAddress,
-              deliveryPincode: p.pincode ?? f.deliveryPincode,
-              deliveryLat: p.lat ?? f.deliveryLat,
-              deliveryLng: p.lng ?? f.deliveryLng,
-              deliveryCity: p.city ?? f.deliveryCity,
-              deliveryState: p.state ?? f.deliveryState,
+              deliveryAddress: h.displayName,
+              deliveryPincode: h.pincode ?? f.deliveryPincode,
+              deliveryLat: Number.isFinite(h.lat) ? h.lat : f.deliveryLat,
+              deliveryLng: Number.isFinite(h.lng) ? h.lng : f.deliveryLng,
+              deliveryCity: h.city ?? f.deliveryCity,
+              deliveryState: h.state ?? f.deliveryState,
             }))
           }
         />
-        <GeocodePincodeButton
-          address={form.deliveryAddress}
-          disabled={loading}
-          contextLabel="डिलीवरी"
-          onResolved={(r) =>
-            setForm((f) => ({
-              ...f,
-              deliveryPincode: r.pincode ?? f.deliveryPincode,
-              deliveryLat: r.lat ?? f.deliveryLat,
-              deliveryLng: r.lng ?? f.deliveryLng,
-            }))
-          }
+        <Field
+          optional
+          label="क्षेत्र / locality (डिलीवरी, वैकल्पिक)"
+          v={form.deliveryArea}
+          onV={(v) => setForm((f) => ({ ...f, deliveryArea: v }))}
         />
-        <div className="grid grid-cols-2 gap-2">
-          <Num label="Delivery lat" value={form.deliveryLat} onChange={(n) => setForm({ ...form, deliveryLat: n })} />
-          <Num label="Delivery lng" value={form.deliveryLng} onChange={(n) => setForm({ ...form, deliveryLng: n })} />
-        </div>
         <div className="grid grid-cols-2 gap-2">
           <Field
             optional
