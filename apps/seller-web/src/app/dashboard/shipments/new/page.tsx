@@ -5,6 +5,7 @@ import { Button } from '@repo/ui'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
+import { GeocodePincodeButton } from '../../../../components/GeocodePincodeButton'
 import { PincodeInput } from '../../../../components/PincodeInput'
 import type { PincodeLookupPayload } from '../../../../hooks/usePincodeLookup'
 
@@ -201,7 +202,7 @@ export default function NewShipmentPage() {
         Demo PINs (seeded): {DEMO_PINCODES}
       </p>
       <p className="text-xs text-muted-foreground">
-        पिनकोड (6 अंक) डालने पर शहर/राज्य ऑटो आते हैं; पूरे पते से पिनकोड अभी ऑटो नहीं आता। बुकिंग के लिए वह PIN प्लेटफ़ॉर्म की सूची में होना चाहिए (नीचे डेमो PIN या DB seed)।
+        पिनकोड (6 अंक) डालने पर शहर/राज्य ऑटो आते हैं; पूरे पते से पिनकोड अभी अपने आप नहीं आता — नीचे पते के नीचे वाला बटन दबाएँ। बुकिंग के लिए वह PIN प्लेटफ़ॉर्म की सूची में होना चाहिए (नीचे डेमो PIN या DB seed)।
       </p>
       <form className="flex flex-col gap-3 text-sm" onSubmit={submit}>
         <Field label="Customer name" v={form.customerName} onV={(v) => setForm({ ...form, customerName: v })} />
@@ -251,6 +252,19 @@ export default function NewShipmentPage() {
           </p>
         ) : null}
         <Field label="Pickup address" v={form.pickupAddress} onV={(v) => setForm({ ...form, pickupAddress: v })} />
+        <GeocodePincodeButton
+          address={form.pickupAddress}
+          disabled={loading}
+          contextLabel="पिकअप"
+          onResolved={(r) =>
+            setForm((f) => ({
+              ...f,
+              pickupPincode: r.pincode ?? f.pickupPincode,
+              pickupLat: r.lat != null ? String(r.lat) : f.pickupLat,
+              pickupLng: r.lng != null ? String(r.lng) : f.pickupLng,
+            }))
+          }
+        />
         <PincodeInput
           id="delivery-pin"
           fieldLabel="डिलीवरी पिनकोड"
@@ -275,6 +289,19 @@ export default function NewShipmentPage() {
           label="Delivery address"
           v={form.deliveryAddress}
           onV={(v) => setForm({ ...form, deliveryAddress: v })}
+        />
+        <GeocodePincodeButton
+          address={form.deliveryAddress}
+          disabled={loading}
+          contextLabel="डिलीवरी"
+          onResolved={(r) =>
+            setForm((f) => ({
+              ...f,
+              deliveryPincode: r.pincode ?? f.deliveryPincode,
+              deliveryLat: r.lat ?? f.deliveryLat,
+              deliveryLng: r.lng ?? f.deliveryLng,
+            }))
+          }
         />
         <div className="grid grid-cols-2 gap-2">
           <Num label="Delivery lat" value={form.deliveryLat} onChange={(n) => setForm({ ...form, deliveryLat: n })} />
