@@ -1,6 +1,5 @@
 'use client'
 
-import { fetchIndiaPincodeLookup } from '@repo/web-core/india-pincode'
 import { useCallback, useState } from 'react'
 
 export type PincodeLookupPayload = {
@@ -8,6 +7,13 @@ export type PincodeLookupPayload = {
   city: string
   state: string
   area: string
+}
+
+type ApiPincodeData = {
+  pincode: string
+  city: string
+  state: string
+  areas: string[]
 }
 
 export function usePincodeLookup() {
@@ -23,17 +29,25 @@ export function usePincodeLookup() {
     setLoading(true)
     setError('')
     try {
-      const result = await fetchIndiaPincodeLookup(pincode)
-      if (!result) {
+      const res = await fetch(`/api/geo/pincode/${encodeURIComponent(pincode)}`)
+      const json = (await res.json()) as
+        | { ok: true; data: ApiPincodeData | null }
+        | { ok: false; error?: { message?: string } }
+      if (!res.ok || !json.ok) {
+        setError('Pincode lookup failed')
+        setAreas([])
+        return null
+      }
+      if (!json.data) {
         setError('Invalid pincode')
         setAreas([])
         return null
       }
-      setAreas(result.areas)
+      setAreas(json.data.areas)
       return {
-        city: result.city,
-        state: result.state,
-        areas: result.areas,
+        city: json.data.city,
+        state: json.data.state,
+        areas: json.data.areas,
       }
     } catch {
       setError('Pincode lookup failed')

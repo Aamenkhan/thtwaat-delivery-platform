@@ -27,6 +27,8 @@ export function PincodeInput({
   const [areaIndex, setAreaIndex] = useState(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastResolvedRef = useRef<string | null>(null)
+  const onPincodeResolvedRef = useRef(onPincodeResolved)
+  onPincodeResolvedRef.current = onPincodeResolved
 
   const cancelLookupRef = useRef(false)
 
@@ -62,30 +64,30 @@ export function PincodeInput({
           area,
         }
         lastResolvedRef.current = `${digits}:${area}`
-        onPincodeResolved?.(payload)
+        onPincodeResolvedRef.current?.(payload)
       })()
     }, 300)
     return () => {
       cancelLookupRef.current = true
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [value, lookup, onPincodeResolved, reset])
+  }, [value, lookup, reset])
 
   useEffect(() => {
-    if (!successCity || !areas.length || !onPincodeResolved) return
+    if (!successCity || !areas.length) return
     const digits = value.replace(/\D/g, '').slice(0, 6)
     if (digits.length !== 6) return
     const area = areas[areaIndex] ?? areas[0] ?? ''
     const key = `${digits}:${area}`
     if (lastResolvedRef.current === key) return
     lastResolvedRef.current = key
-    onPincodeResolved({
+    onPincodeResolvedRef.current?.({
       pincode: digits,
       city: successCity,
       state: successState ?? '',
       area,
     })
-  }, [areaIndex, areas, onPincodeResolved, successCity, successState, value])
+  }, [areaIndex, areas, successCity, successState, value])
 
   const showError = Boolean(error) && value.length === 6 && !loading
   const showSuccess = Boolean(successCity && successState && !error && !loading)

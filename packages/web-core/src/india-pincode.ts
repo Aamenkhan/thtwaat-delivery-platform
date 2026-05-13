@@ -19,11 +19,16 @@ export type IndiaPincodeLookupResult = {
   areas: string[]
 }
 
+const POSTAL_PINCODE_TIMEOUT_MS = 12_000
+
 export async function fetchIndiaPincodeLookup(
   pincode: string
 ): Promise<IndiaPincodeLookupResult | null> {
   if (!/^\d{6}$/.test(pincode)) return null
-  const res = await fetch(`https://api.postalpincode.in/pincode/${pincode}`)
+  const res = await fetch(`https://api.postalpincode.in/pincode/${pincode}`, {
+    signal: AbortSignal.timeout(POSTAL_PINCODE_TIMEOUT_MS),
+    headers: { 'User-Agent': 'Thtwaat-Delivery-App' },
+  })
   if (!res.ok) return null
   const data = (await res.json()) as IndiaPostalPincodeBlock[]
   const block = Array.isArray(data) ? data[0] : null

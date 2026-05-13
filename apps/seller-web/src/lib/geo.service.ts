@@ -51,8 +51,8 @@ export async function lookupPincode(pincode: string): Promise<PincodeLookupResul
   if (!/^\d{6}$/.test(pincode)) return null
 
   const res = await fetch(`${POSTAL_BASE}/pincode/${pincode}`, {
+    signal: AbortSignal.timeout(12_000),
     headers: { 'User-Agent': NOMINATIM_USER_AGENT },
-    next: { revalidate: 3600 },
   })
   if (!res.ok) return null
 

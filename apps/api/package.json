@@ -19,6 +19,7 @@
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/formidable": "^3.5.1",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.10.2",
     "@types/qrcode": "^1.5.6",
@@ -40,7 +41,6 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/formidable": "^3.5.1",
     "tsx": "^4.19.2"
   }
 }
