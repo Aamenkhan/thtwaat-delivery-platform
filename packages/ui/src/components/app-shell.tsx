@@ -127,7 +127,7 @@ export function AppShell({
         </aside>
 
         {/* ── Main content ── */}
-        <div className="flex min-w-0 flex-1 flex-col pb-20 lg:pb-0">
+        <div className="flex min-w-0 flex-1 flex-col pb-28 lg:pb-0">
           {/* Mobile header */}
           <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-3 border-b border-border/60 bg-background/80 px-4 backdrop-blur-xl lg:hidden">
             <Link href={brand.href} className="flex items-center gap-2 text-sm font-bold">

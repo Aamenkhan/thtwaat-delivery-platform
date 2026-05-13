@@ -1,13 +1,18 @@
 'use client'
 
-import { apiFetch } from '@repo/web-core/api'
+import { ApiError, apiFetch } from '@repo/web-core/api'
 import { Button } from '@repo/ui'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+
+/** Must match `PincodeDirectory` seed rows or booking returns 404. */
+const DEMO_PINCODES =
+  'Bengaluru 560001, 560103 · Mumbai 400001, 400053. Other 6-digit PINs must exist in the DB seed (Delhi 11xxxx not seeded by default).'
 
 export default function NewShipmentPage() {
   const router = useRouter()
+  const errorRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({
@@ -24,6 +29,12 @@ export default function NewShipmentPage() {
     /** Must exist in DB seed (`PincodeDirectory`) — 560001 / 560103 are Bengaluru demo rows. */
     deliveryPincode: '560103',
   })
+
+  useEffect(() => {
+    if (error) {
+      errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [error])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -50,25 +61,37 @@ export default function NewShipmentPage() {
       })
       router.push(`/dashboard/tracking/${res.data.summary.publicId}`)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Booking failed')
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Booking failed'
+      setError(msg)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="mx-auto flex max-w-xl flex-col gap-6">
+    <div className="mx-auto flex max-w-xl flex-col gap-6 pb-8 sm:pb-10">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Create shipment</h1>
         <Button variant="outline" asChild size="sm">
           <Link href="/dashboard/shipments">Back</Link>
         </Button>
       </div>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? (
+        <div
+          ref={errorRef}
+          role="alert"
+          className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          {error}
+        </div>
+      ) : null}
       <p className="text-xs text-muted-foreground">
-        Demo PINs (seeded): Bengaluru <code className="rounded bg-muted px-1">560001</code>,{' '}
-        <code className="rounded bg-muted px-1">560103</code> · Mumbai{' '}
-        <code className="rounded bg-muted px-1">400001</code>, <code className="rounded bg-muted px-1">400053</code>.
+        Demo PINs (seeded): {DEMO_PINCODES}
       </p>
       <form className="flex flex-col gap-3 text-sm" onSubmit={submit}>
         <Field label="Customer name" v={form.customerName} onV={(v) => setForm({ ...form, customerName: v })} />
@@ -93,7 +116,7 @@ export default function NewShipmentPage() {
         </div>
         <Num label="Weight (grams)" value={form.weightGrams} onChange={(n) => setForm({ ...form, weightGrams: n })} />
         <Num label="COD (INR)" value={form.codAmount} onChange={(n) => setForm({ ...form, codAmount: n })} />
-        <Button type="submit" disabled={loading}>
+        <Button type="submit" disabled={loading} className="w-full sm:w-auto">
           {loading ? 'Booking…' : 'Book shipment'}
         </Button>
       </form>
