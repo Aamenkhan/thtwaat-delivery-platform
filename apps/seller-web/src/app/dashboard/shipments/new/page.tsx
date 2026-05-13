@@ -245,12 +245,12 @@ export default function NewShipmentPage() {
             }))
           }
         />
-        <Field label="Pickup address" v={form.pickupAddress} onV={(v) => setForm({ ...form, pickupAddress: v })} />
         {form.pickupCity ? (
           <p className="text-xs text-muted-foreground">
             शहर: {form.pickupCity} · राज्य: {form.pickupState}
           </p>
         ) : null}
+        <Field label="Pickup address" v={form.pickupAddress} onV={(v) => setForm({ ...form, pickupAddress: v })} />
         <PincodeInput
           id="delivery-pin"
           fieldLabel="डिलीवरी पिनकोड"
