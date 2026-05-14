@@ -2,12 +2,15 @@
 
 import { GoogleLogin } from '@react-oauth/google'
 import { ApiError, getApiBaseUrl, googleLoginRequest, loginRequest } from '@repo/web-core/api'
-import { clearTokens } from '@repo/web-core/auth-storage'
-import { Button } from '@repo/ui'
+import { clearTokens, readTokens } from '@repo/web-core/auth-storage'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { workerFetch, WorkerApiError } from '../../lib/worker-api'
+import {
+  exchangeWorkerGigSessionFromAccessToken,
+  workerFetch,
+  WorkerApiError,
+} from '../../lib/worker-api'
 import { writeWorkerSession } from '../../lib/worker-session'
 
 function sellerLoginHref(): string | undefined {
@@ -24,14 +27,19 @@ function adminLoginHref(): string | undefined {
   return undefined
 }
 
+type Tab = 'phone' | 'email'
+
 export default function WorkerLoginPage() {
   const router = useRouter()
   const sellerHref = sellerLoginHref()
   const adminHref = adminLoginHref()
   const [err, setErr] = useState<string | null>(null)
+  const [tab, setTab] = useState<Tab>('phone')
+
   useEffect(() => {
     setErr(new URLSearchParams(window.location.search).get('error'))
   }, [])
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [phone, setPhone] = useState('')
@@ -89,10 +97,18 @@ export default function WorkerLoginPage() {
         setMessage('Seller ya admin app use karein.')
         return
       }
+      const access = readTokens()?.accessToken
+      if (!access) {
+        setMessage('Login response incomplete — try again.')
+        return
+      }
+      await exchangeWorkerGigSessionFromAccessToken(access)
       router.replace('/dashboard')
       router.refresh()
     } catch (e) {
       if (e instanceof ApiError) {
+        setMessage(e.message)
+      } else if (e instanceof WorkerApiError) {
         setMessage(e.message)
       } else {
         setMessage('API connect nahi ho raha — network / CORS check karein.')
@@ -113,11 +129,19 @@ export default function WorkerLoginPage() {
         setMessage('Seller ya admin app use karein.')
         return
       }
+      const access = readTokens()?.accessToken
+      if (!access) {
+        setMessage('Login response incomplete — try again.')
+        return
+      }
+      await exchangeWorkerGigSessionFromAccessToken(access)
       router.replace('/dashboard')
       router.refresh()
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         setMessage('Galat credentials.')
+      } else if (e instanceof WorkerApiError) {
+        setMessage(e.message)
       } else if (e instanceof ApiError) {
         setMessage(e.message)
       } else {
@@ -128,137 +152,390 @@ export default function WorkerLoginPage() {
     }
   }
 
+  const errorMap: Record<string, string> = {
+    wrong_role: '⚠️ Sirf WORKER / DELIVERY_WORKER is app mein login kar sakte hain.',
+    schema: '⚠️ Production DB schema purana hai (P2022). Admin se contact karein.',
+    worker_session: '⚠️ Worker session link nahi ho saka — dubara login karein.',
+  }
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6 sm:p-10">
-      <div className="rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Worker login</h1>
-          <p className="mt-1 text-xs text-muted-foreground">Phone OTP · field app</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            API:{' '}
-            <code className="rounded bg-muted px-1 py-0.5 text-xs">{getApiBaseUrl()}</code>
+    <main
+      style={{
+        minHeight: '100svh',
+        background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1.5rem',
+        fontFamily: 'var(--font-sans, Inter, sans-serif)',
+      }}
+    >
+      <div style={{ width: '100%', maxWidth: '420px' }}>
+        {/* Logo / Brand */}
+        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '64px',
+              height: '64px',
+              borderRadius: '20px',
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              boxShadow: '0 8px 32px rgba(99,102,241,0.4)',
+              marginBottom: '1rem',
+            }}
+          >
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" fill="white" opacity="0.9" />
+              <path d="M2 17l10 5 10-5" stroke="white" strokeWidth="2" strokeLinecap="round" />
+              <path d="M2 12l10 5 10-5" stroke="white" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
+            </svg>
+          </div>
+          <h1
+            style={{
+              fontSize: '1.75rem',
+              fontWeight: 700,
+              color: 'white',
+              margin: 0,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            Thtwaat Field
+          </h1>
+          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+            Delivery Worker Portal
           </p>
         </div>
-        {err === 'wrong_role' ? (
-          <p className="mt-4 text-sm text-destructive">Sirf WORKER / DELIVERY_WORKER.</p>
-        ) : null}
-        {message ? <p className="mt-4 text-sm text-destructive">{message}</p> : null}
 
-        <div className="mt-6 space-y-3">
-          <label className="flex flex-col gap-1 text-sm">
-            Mobile (10 digits)
-            <input
-              className="min-h-12 rounded-md border bg-background px-3 py-3 text-base"
-              inputMode="numeric"
-              autoComplete="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-            />
-          </label>
-          {!otpSent ? (
-            <Button
-              type="button"
-              className="h-12 w-full text-base"
-              disabled={loading || phone.length < 10}
-              onClick={() => void sendPhoneOtp()}
+        {/* Card */}
+        <div
+          style={{
+            background: 'rgba(255,255,255,0.07)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            borderRadius: '24px',
+            border: '1px solid rgba(255,255,255,0.12)',
+            padding: '2rem',
+            boxShadow: '0 25px 50px rgba(0,0,0,0.4)',
+          }}
+        >
+          {/* Error banners */}
+          {err && errorMap[err] && (
+            <div
+              style={{
+                background: 'rgba(239,68,68,0.15)',
+                border: '1px solid rgba(239,68,68,0.3)',
+                borderRadius: '12px',
+                padding: '0.75rem 1rem',
+                marginBottom: '1.25rem',
+                color: '#fca5a5',
+                fontSize: '0.8125rem',
+              }}
             >
-              Send OTP
-            </Button>
-          ) : (
-            <>
-              <label className="flex flex-col gap-1 text-sm">
-                OTP
-                <input
-                  className="min-h-12 rounded-md border bg-background px-3 py-3 text-center text-2xl tracking-widest"
-                  inputMode="numeric"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                />
-              </label>
-              <Button
+              {errorMap[err]}
+            </div>
+          )}
+          {message && (
+            <div
+              style={{
+                background: 'rgba(239,68,68,0.15)',
+                border: '1px solid rgba(239,68,68,0.3)',
+                borderRadius: '12px',
+                padding: '0.75rem 1rem',
+                marginBottom: '1.25rem',
+                color: '#fca5a5',
+                fontSize: '0.8125rem',
+              }}
+            >
+              {message}
+            </div>
+          )}
+
+          {/* Tab switcher */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '0.375rem',
+              background: 'rgba(0,0,0,0.3)',
+              borderRadius: '14px',
+              padding: '0.25rem',
+              marginBottom: '1.5rem',
+            }}
+          >
+            {(['phone', 'email'] as Tab[]).map((t) => (
+              <button
+                key={t}
                 type="button"
-                className="h-12 w-full text-base"
-                disabled={loading || otp.length < 4}
-                onClick={() => void verifyPhoneOtp()}
+                onClick={() => { setTab(t); setMessage(null) }}
+                style={{
+                  padding: '0.625rem',
+                  borderRadius: '11px',
+                  border: 'none',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  background: tab === t
+                    ? 'linear-gradient(135deg, #6366f1, #8b5cf6)'
+                    : 'transparent',
+                  color: tab === t ? 'white' : 'rgba(255,255,255,0.5)',
+                  boxShadow: tab === t ? '0 4px 12px rgba(99,102,241,0.35)' : 'none',
+                }}
               >
-                Verify &amp; continue
-              </Button>
+                {t === 'phone' ? '📱 Phone OTP' : '✉️ Email'}
+              </button>
+            ))}
+          </div>
+
+          {/* Phone OTP tab */}
+          {tab === 'phone' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+              <div>
+                <label style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.75rem', fontWeight: 500, display: 'block', marginBottom: '0.375rem', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  Mobile Number
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)', fontSize: '0.875rem', pointerEvents: 'none' }}>+91</span>
+                  <input
+                    id="worker-phone"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    value={phone}
+                    placeholder="9876543210"
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      background: 'rgba(255,255,255,0.08)',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: '12px',
+                      padding: '0.875rem 1rem 0.875rem 3rem',
+                      color: 'white',
+                      fontSize: '1rem',
+                      outline: 'none',
+                      letterSpacing: '0.05em',
+                    }}
+                  />
+                </div>
+              </div>
+
+              {!otpSent ? (
+                <button
+                  id="send-otp-btn"
+                  type="button"
+                  disabled={loading || phone.length < 10}
+                  onClick={() => void sendPhoneOtp()}
+                  style={{
+                    width: '100%',
+                    padding: '0.9375rem',
+                    borderRadius: '14px',
+                    border: 'none',
+                    fontSize: '1rem',
+                    fontWeight: 700,
+                    cursor: phone.length < 10 || loading ? 'not-allowed' : 'pointer',
+                    background: phone.length < 10 || loading
+                      ? 'rgba(255,255,255,0.1)'
+                      : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                    color: phone.length < 10 || loading ? 'rgba(255,255,255,0.3)' : 'white',
+                    boxShadow: phone.length >= 10 && !loading ? '0 6px 20px rgba(99,102,241,0.4)' : 'none',
+                    transition: 'all 0.2s',
+                    letterSpacing: '0.01em',
+                  }}
+                >
+                  {loading ? 'Sending…' : 'Send OTP →'}
+                </button>
+              ) : (
+                <>
+                  <div>
+                    <label style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.75rem', fontWeight: 500, display: 'block', marginBottom: '0.375rem', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                      Enter OTP
+                    </label>
+                    <input
+                      id="worker-otp"
+                      inputMode="numeric"
+                      autoFocus
+                      value={otp}
+                      placeholder="• • • • • •"
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        background: 'rgba(255,255,255,0.08)',
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        borderRadius: '12px',
+                        padding: '0.875rem 1rem',
+                        color: 'white',
+                        fontSize: '1.75rem',
+                        fontWeight: 700,
+                        outline: 'none',
+                        textAlign: 'center',
+                        letterSpacing: '0.5em',
+                      }}
+                    />
+                    <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginTop: '0.375rem', textAlign: 'center' }}>
+                      OTP sent to +91 {phone}
+                    </p>
+                  </div>
+                  <button
+                    id="verify-otp-btn"
+                    type="button"
+                    disabled={loading || otp.length < 4}
+                    onClick={() => void verifyPhoneOtp()}
+                    style={{
+                      width: '100%',
+                      padding: '0.9375rem',
+                      borderRadius: '14px',
+                      border: 'none',
+                      fontSize: '1rem',
+                      fontWeight: 700,
+                      cursor: otp.length < 4 || loading ? 'not-allowed' : 'pointer',
+                      background: otp.length >= 4 && !loading
+                        ? 'linear-gradient(135deg, #10b981, #059669)'
+                        : 'rgba(255,255,255,0.1)',
+                      color: otp.length >= 4 && !loading ? 'white' : 'rgba(255,255,255,0.3)',
+                      boxShadow: otp.length >= 4 && !loading ? '0 6px 20px rgba(16,185,129,0.4)' : 'none',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {loading ? 'Verifying…' : '✓ Verify & Login'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setOtpSent(false); setOtp('') }}
+                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', fontSize: '0.8125rem', cursor: 'pointer', textAlign: 'center', width: '100%' }}
+                  >
+                    ← Change number
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Email tab */}
+          {tab === 'email' && (
+            <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+              <div>
+                <label style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.75rem', fontWeight: 500, display: 'block', marginBottom: '0.375rem', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  Email
+                </label>
+                <input
+                  id="worker-email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  placeholder="worker@example.com"
+                  onChange={(e) => setEmail(e.target.value)}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '12px',
+                    padding: '0.875rem 1rem',
+                    color: 'white',
+                    fontSize: '1rem',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.75rem', fontWeight: 500, display: 'block', marginBottom: '0.375rem', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  Password
+                </label>
+                <input
+                  id="worker-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  placeholder="••••••••"
+                  onChange={(e) => setPassword(e.target.value)}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '12px',
+                    padding: '0.875rem 1rem',
+                    color: 'white',
+                    fontSize: '1rem',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+              <button
+                id="email-login-btn"
+                type="submit"
+                disabled={loading}
+                style={{
+                  width: '100%',
+                  padding: '0.9375rem',
+                  borderRadius: '14px',
+                  border: 'none',
+                  fontSize: '1rem',
+                  fontWeight: 700,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  background: loading ? 'rgba(255,255,255,0.1)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  color: loading ? 'rgba(255,255,255,0.3)' : 'white',
+                  boxShadow: !loading ? '0 6px 20px rgba(99,102,241,0.4)' : 'none',
+                  transition: 'all 0.2s',
+                }}
+              >
+                {loading ? 'Signing in…' : 'Sign in →'}
+              </button>
+            </form>
+          )}
+
+          {/* Google */}
+          {hasGoogleClientId && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '1.25rem 0' }}>
+                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.12)' }} />
+                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.75rem' }}>or</span>
+                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.12)' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <GoogleLogin
+                  onSuccess={(resp) => {
+                    if (resp.credential) handleGoogleSuccess(resp.credential)
+                  }}
+                  onError={() => setMessage('Google sign-in failed.')}
+                  theme="filled_black"
+                  size="large"
+                  text="signin_with"
+                  shape="pill"
+                />
+              </div>
             </>
           )}
+
+          {/* Footer links */}
+          <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
+            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8125rem' }}>
+              नया worker?{' '}
+              <Link
+                href="/register"
+                style={{ color: '#a78bfa', textDecoration: 'underline', fontWeight: 600 }}
+              >
+                Register करें
+              </Link>
+            </p>
+            <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: '0.6875rem', marginTop: '0.5rem' }}>
+              API: <code style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.05)', padding: '0 4px', borderRadius: '4px' }}>{getApiBaseUrl()}</code>
+            </p>
+          </div>
         </div>
 
-        <div className="relative my-6 flex items-center">
-          <div className="flex-1 border-t border-border" />
-          <span className="mx-3 text-xs text-muted-foreground">or email</span>
-          <div className="flex-1 border-t border-border" />
-        </div>
-
-        <form className="flex flex-col gap-4 text-sm" onSubmit={onSubmit}>
-          <label className="flex flex-col gap-1">
-            Email
-            <input
-              className="min-h-12 rounded-md border bg-background px-3 py-2"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            Password
-            <input
-              className="min-h-12 rounded-md border bg-background px-3 py-2"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-          <Button type="submit" disabled={loading} className="h-12 w-full">
-            {loading ? '…' : 'Sign in with email'}
-          </Button>
-        </form>
-        {hasGoogleClientId ? (
-          <>
-            <div className="relative my-4 flex items-center">
-              <div className="flex-1 border-t border-border" />
-              <span className="mx-3 text-xs text-muted-foreground">or</span>
-              <div className="flex-1 border-t border-border" />
-            </div>
-            <div className="flex justify-center">
-              <GoogleLogin
-                onSuccess={(resp) => {
-                  if (resp.credential) handleGoogleSuccess(resp.credential)
-                }}
-                onError={() => setMessage('Google sign-in failed.')}
-                theme="outline"
-                size="large"
-                text="signin_with"
-              />
-            </div>
-          </>
-        ) : null}
-        <Button variant="outline" className="mt-4 w-full" asChild>
-          <Link href="/dashboard">Dashboard</Link>
-        </Button>
-        <p className="mt-3 text-center text-sm text-muted-foreground">
-          नया worker?{' '}
-          <Link href="/register" className="text-primary underline">
-            रजिस्टर
-          </Link>
-        </p>
+        {/* Seller / Admin links */}
+        {sellerHref && adminHref && (
+          <p style={{ textAlign: 'center', marginTop: '1.25rem', fontSize: '0.75rem', color: 'rgba(255,255,255,0.25)' }}>
+            <a href={sellerHref} style={{ color: 'rgba(255,255,255,0.4)', textDecoration: 'underline' }}>Seller Portal</a>
+            {' · '}
+            <a href={adminHref} style={{ color: 'rgba(255,255,255,0.4)', textDecoration: 'underline' }}>Admin Portal</a>
+          </p>
+        )}
       </div>
-      {sellerHref && adminHref ? (
-        <p className="text-center text-xs text-muted-foreground">
-          <a className="text-primary underline" href={sellerHref}>
-            Seller
-          </a>
-          {' · '}
-          <a className="text-primary underline" href={adminHref}>
-            Admin
-          </a>
-        </p>
-      ) : null}
     </main>
   )
 }
