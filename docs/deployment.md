@@ -67,7 +67,9 @@ Repeat per app with different root directories or use a single Vercel monorepo w
 
 ## Render (API)
 
-Use the **repository root** as the service root so `pnpm` workspaces resolve. The `@repo/api` **build** script runs `prisma generate`, then **`prisma migrate deploy`** (same schema path), then `tsc` — so each deploy applies pending migrations as long as `DATABASE_URL` / `DIRECT_URL` are set on the build environment (Render passes service env into the build by default).
+Use the **repository root** as the service root so `pnpm` workspaces resolve. The `@repo/api` **build** runs `prisma generate` + `tsc`; **`prisma migrate deploy` runs on `start`** (when the service boots). Set `DATABASE_URL` and `DIRECT_URL` on Render before deploy.
+
+**Render env paste (P1000 fix):** In the dashboard value field, paste the URI **without** surrounding `"` quotes. Wrong: `"postgresql://...` (quote in value). Right: `postgresql://postgres.<ref>:<password>@aws-....pooler.supabase.com:6543/postgres?pgbouncer=true`. Copy both strings from Supabase **Connect → ORM** (Copy button). `DIRECT_URL` must use session pooler port **5432**, same password as `DATABASE_URL`.
 
 1. New Web Service from repo; **build** with something like:  
    `corepack enable && corepack prepare pnpm@9.15.0 --activate && pnpm install --frozen-lockfile && pnpm --filter @repo/api run build`
