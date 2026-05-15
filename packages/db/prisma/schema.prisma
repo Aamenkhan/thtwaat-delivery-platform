@@ -384,8 +384,16 @@ model Worker {
   pincode           String?
   vehicleNumber     String?
   vehicleType       String?
+  /// Petrol | Diesel | CNG | Electric (worker declares at onboarding).
+  vehicleFuelType   String?
   aadhaarNumber     String?
   aadhaarPhotoUrl   String?
+  aadhaarBackPhotoUrl String?
+  panNumber         String?
+  panFrontPhotoUrl  String?
+  panBackPhotoUrl   String?
+  vehicleFrontPhotoUrl String?
+  vehicleBackPhotoUrl  String?
   drivingLicenseNo  String?
   drivingLicenseUrl String?
   isOnline          Boolean   @default(false)
@@ -398,6 +406,10 @@ model Worker {
   isVerified        Boolean   @default(false)
   verifiedAt        DateTime?
   verifiedBy        String?
+  /// ₹999 (or configured) onboarding fee — set when payment confirmed (Razorpay / manual ops).
+  onboardingFeePaidAt DateTime?
+  /// All mandatory training videos watched; required before going online for gigs.
+  trainingCompletedAt DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 

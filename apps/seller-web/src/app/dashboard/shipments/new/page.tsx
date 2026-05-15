@@ -207,7 +207,9 @@ export default function NewShipmentPage() {
         Demo PINs (seeded): {DEMO_PINCODES}
       </p>
       <p className="text-xs text-muted-foreground">
-        पिनकोड: India Post (मुफ्त)। पता खोज: OpenStreetMap Nominatim (मुफ्त)। © OpenStreetMap योगदानकर्ता
+        पिनकोड: India Post (मुफ्त)। पता: OpenStreetMap या (Vercel पर{' '}
+        <code className="text-[11px]">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> हो तो) Google Places — चुनने पर
+        lat/lng ऑटो भरते हैं। © OpenStreetMap योगदानकर्ता
       </p>
       <form className="flex flex-col gap-3 text-sm" onSubmit={submit}>
         <Field label="Customer name" v={form.customerName} onV={(v) => setForm({ ...form, customerName: v })} />
@@ -329,14 +331,21 @@ export default function NewShipmentPage() {
             label="Pickup lat (optional)"
             v={form.pickupLat}
             onV={(v) => setForm({ ...form, pickupLat: v })}
+            placeholder="12.9716"
+            inputMode="decimal"
           />
           <Field
             optional
             label="Pickup lng (optional)"
             v={form.pickupLng}
             onV={(v) => setForm({ ...form, pickupLng: v })}
+            placeholder="77.5946"
+            inputMode="decimal"
           />
         </div>
+        <p className="text-xs text-muted-foreground">
+          पता चुनने पर ऊपर से भर जाता है; खाली या दशमलव संख्या — दोनों खाली छोड़ सकते हो।
+        </p>
         <Button type="submit" disabled={loading} className="w-full sm:w-auto">
           {loading ? 'Booking…' : 'Book shipment'}
         </Button>
@@ -350,11 +359,15 @@ function Field({
   v,
   onV,
   optional,
+  placeholder,
+  inputMode,
 }: {
   label: string
   v: string
   onV: (s: string) => void
   optional?: boolean
+  placeholder?: string
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode']
 }) {
   return (
     <label className="flex flex-col gap-1">
@@ -362,6 +375,8 @@ function Field({
       <input
         className="rounded-md border bg-background px-2 py-1.5"
         value={v}
+        placeholder={placeholder}
+        inputMode={inputMode}
         onChange={(e) => onV(e.target.value)}
         required={!optional}
       />

@@ -53,12 +53,25 @@ export default function WorkerLoginPage() {
     setLoading(true)
     setMessage(null)
     try {
-      await workerFetch<{ message: string }>('/workers/login/request-otp', {
+      const res = await workerFetch<{
+        message: string
+        _devOtp?: string
+        delivery?: 'whatsapp' | 'log_only'
+      }>('/workers/login/request-otp', {
         method: 'POST',
         body: JSON.stringify({ phone }),
         skipAuth: true,
       })
       setOtpSent(true)
+      if (res._devOtp) {
+        setMessage(`Dev OTP: ${res._devOtp}`)
+      } else if (res.delivery === 'log_only') {
+        setMessage(
+          'OTP API logs mein hai (Render → Logs). WhatsApp ke liye API par WHATSAPP_* env set karein.'
+        )
+      } else {
+        setMessage(res.message)
+      }
     } catch (e) {
       setMessage(e instanceof WorkerApiError ? e.message : 'OTP request failed')
     } finally {

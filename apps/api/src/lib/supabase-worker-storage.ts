@@ -22,7 +22,15 @@ function getBucket(): string {
 
 export async function uploadWorkerAsset(input: {
   workerId: string
-  type: 'profile' | 'aadhaar' | 'license'
+  type:
+    | 'profile'
+    | 'aadhaar'
+    | 'aadhaar_back'
+    | 'pan_front'
+    | 'pan_back'
+    | 'vehicle_front'
+    | 'vehicle_back'
+    | 'license'
   filename: string
   buffer: Buffer
   contentType: string

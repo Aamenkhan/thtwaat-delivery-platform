@@ -1,5 +1,7 @@
 import { getApiBaseUrl } from '@repo/web-core/api'
 
+import { writeWorkerSession } from './worker-session'
+
 function apiV1() {
   return `${getApiBaseUrl().replace(/\/$/, '')}/api/v1`
 }
@@ -28,6 +30,31 @@ export type WorkerFetchInit = RequestInit & {
   token?: string | null
   /** Do not attach Authorization (e.g. login/register). */
   skipAuth?: boolean
+}
+
+/** After email/Google login: map `User` → worker row → gig JWT + localStorage (same as phone OTP). */
+export async function exchangeWorkerGigSessionFromAccessToken(accessToken: string): Promise<void> {
+  const url = `${apiV1()}/workers/session-from-user`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+  })
+  const body = await parseJson(res)
+  if (!res.ok || !body.ok) {
+    const msg =
+      typeof body.error === 'object' &&
+      body.error &&
+      'message' in body.error &&
+      typeof (body.error as { message?: string }).message === 'string'
+        ? (body.error as { message: string }).message
+        : `Worker session failed (${res.status})`
+    throw new WorkerApiError(res.status, msg)
+  }
+  const data = body.data as { token?: string; worker?: { id?: string } }
+  if (!data?.token || !data.worker?.id) {
+    throw new WorkerApiError(500, 'Invalid session response')
+  }
+  writeWorkerSession(data.token, data.worker.id)
 }
 
 export async function workerFetch<T>(path: string, init: WorkerFetchInit = {}): Promise<T> {

@@ -5,6 +5,7 @@ import { clearTokens, readTokens, readUser } from '@repo/web-core/auth-storage'
 import { useRouter } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { exchangeWorkerGigSessionFromAccessToken, WorkerApiError } from '../lib/worker-api'
 import { readWorkerToken } from '../lib/worker-session'
 
 const WORKER_ROLES = new Set(['WORKER', 'DELIVERY_WORKER'])
@@ -14,24 +15,40 @@ export function WorkerAuthGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    const jwt = readWorkerToken()
-    if (jwt) {
-      setReady(true)
-      return
+    let cancelled = false
+    void (async () => {
+      if (readWorkerToken()) {
+        if (!cancelled) setReady(true)
+        return
+      }
+      const user = readUser()
+      const tokens = readTokens()
+      if (!user?.email || !tokens?.accessToken) {
+        clearTokens()
+        if (!cancelled) router.replace('/login')
+        return
+      }
+      if (!WORKER_ROLES.has(user.role)) {
+        clearTokens()
+        if (!cancelled) router.replace('/login?error=wrong_role')
+        return
+      }
+      try {
+        await exchangeWorkerGigSessionFromAccessToken(tokens.accessToken)
+        if (!cancelled) setReady(true)
+      } catch (e) {
+        clearTokens()
+        const schema =
+          e instanceof WorkerApiError &&
+          (e.message.includes('P2022') || e.message.toLowerCase().includes('schema'))
+        if (!cancelled) {
+          router.replace(schema ? '/login?error=schema' : '/login?error=worker_session')
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
     }
-    const user = readUser()
-    const tokens = readTokens()
-    if (!user?.email || !tokens?.accessToken) {
-      clearTokens()
-      router.replace('/login')
-      return
-    }
-    if (!WORKER_ROLES.has(user.role)) {
-      clearTokens()
-      router.replace('/login?error=wrong_role')
-      return
-    }
-    setReady(true)
   }, [router])
 
   if (!ready) {

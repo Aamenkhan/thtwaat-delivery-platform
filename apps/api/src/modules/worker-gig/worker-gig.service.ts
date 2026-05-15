@@ -8,7 +8,21 @@ import { prisma } from '../../lib/prisma.js'
 import { HttpError } from '../../lib/http-error.js'
 import { signWorkerJwt } from '../../lib/worker-jwt.js'
 import { getIo } from '../../lib/realtime.js'
-import { maskPhone, randomSixDigitOtp, regOrderId } from './worker-gig.utils.js'
+import {
+  deliverWorkerOtp,
+  normalizeWorkerPhoneDigits,
+  workerOtpSentPayload,
+  workerPhoneLookupVariants,
+} from './worker-otp-delivery.js'
+import { randomSixDigitOtp, regOrderId } from './worker-gig.utils.js'
+
+async function findWorkerByPhone(phoneRaw: string) {
+  const variants = workerPhoneLookupVariants(phoneRaw)
+  return prisma.worker.findFirst({
+    where: { phone: { in: variants } },
+    orderBy: { createdAt: 'desc' },
+  })
+}
 
 function mapAppRoleFromGigRole(wr: WorkerRole): Role {
   if (wr === WorkerRole.PICKUP_AGENT) return Role.WORKER
@@ -42,7 +56,7 @@ export async function registerWorker(input: {
   const hub = await prisma.hub.findUnique({ where: { id: input.hubId } })
   if (!hub) throw new HttpError(404, 'Hub not found')
 
-  const phone = input.phone.replace(/\D/g, '')
+  const phone = normalizeWorkerPhoneDigits(input.phone)
   if (phone.length < 10) throw new HttpError(400, 'Invalid phone')
 
   const { workerRole } = mapBodyRoleToWorkerRole(input.role)
@@ -75,11 +89,11 @@ export async function registerWorker(input: {
     },
   })
 
-  console.log(`[worker-register] OTP for ${phone} worker ${worker.id}: ${otp}`)
+  const delivery = await deliverWorkerOtp(phone, otp, 'register')
 
   return {
     workerId: worker.id,
-    message: `OTP sent to ${maskPhone(phone)}`,
+    ...workerOtpSentPayload(phone, otp, delivery.delivered),
   }
 }
 
@@ -114,13 +128,15 @@ export function loginOrderId(phoneDigits: string) {
 }
 
 export async function requestLoginOtp(phoneRaw: string) {
-  const phone = phoneRaw.replace(/\D/g, '')
+  const phone = normalizeWorkerPhoneDigits(phoneRaw)
   if (phone.length < 10) throw new HttpError(400, 'Invalid phone')
-  const worker = await prisma.worker.findFirst({
-    where: { phone },
-    orderBy: { createdAt: 'desc' },
-  })
-  if (!worker) throw new HttpError(404, 'No worker for this phone')
+  const worker = await findWorkerByPhone(phoneRaw)
+  if (!worker) {
+    throw new HttpError(
+      404,
+      'No worker for this phone. Pehle /register se account banao, ya admin se Worker.phone set karwao.'
+    )
+  }
 
   const otp = randomSixDigitOtp()
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
@@ -134,12 +150,24 @@ export async function requestLoginOtp(phoneRaw: string) {
       workerId: worker.id,
     },
   })
-  console.log(`[worker-login] OTP for ${phone}: ${otp}`)
-  return { message: `OTP sent to ${maskPhone(phone)}` }
+  const delivery = await deliverWorkerOtp(phone, otp, 'login')
+  return workerOtpSentPayload(phone, otp, delivery.delivered)
+}
+
+/** Exchange a normal User JWT (email / Google login) for a worker-gig JWT when `Worker.userId` is set. */
+export async function issueWorkerSessionForUserId(userId: string) {
+  const worker = await prisma.worker.findUnique({ where: { userId } })
+  if (!worker) {
+    throw new HttpError(
+      404,
+      'No worker profile linked to this account. Use phone OTP on this app, or finish worker registration.'
+    )
+  }
+  return finalizeWorkerToken(worker)
 }
 
 export async function verifyLoginOtp(input: { phone: string; otp: string }) {
-  const phone = input.phone.replace(/\D/g, '')
+  const phone = normalizeWorkerPhoneDigits(input.phone)
   const session = await prisma.workerOtpSession.findFirst({
     where: {
       orderId: loginOrderId(phone),
@@ -188,6 +216,82 @@ function finalizeWorkerToken(worker: {
   }
 }
 
+export const WORKER_TRAINING_VIDEO_IDS = ['safety-intro', 'parcel-handling', 'customer-etiquette'] as const
+
+function kycDocumentBlockers(w: {
+  aadhaarPhotoUrl: string | null
+  aadhaarBackPhotoUrl: string | null
+  panFrontPhotoUrl: string | null
+  panBackPhotoUrl: string | null
+  vehicleFrontPhotoUrl: string | null
+  vehicleBackPhotoUrl: string | null
+  drivingLicenseUrl: string | null
+}): string[] {
+  const b: string[] = []
+  if (!w.aadhaarPhotoUrl) b.push('aadhaar_front_photo')
+  if (!w.aadhaarBackPhotoUrl) b.push('aadhaar_back_photo')
+  if (!w.panFrontPhotoUrl) b.push('pan_front_photo')
+  if (!w.panBackPhotoUrl) b.push('pan_back_photo')
+  if (!w.vehicleFrontPhotoUrl) b.push('vehicle_front_photo')
+  if (!w.vehicleBackPhotoUrl) b.push('vehicle_back_photo')
+  if (!w.drivingLicenseUrl) b.push('driving_license_photo')
+  return b
+}
+
+export function workerGigEligibility(w: {
+  isVerified: boolean
+  onboardingFeePaidAt: Date | null
+  trainingCompletedAt: Date | null
+  aadhaarPhotoUrl: string | null
+  aadhaarBackPhotoUrl: string | null
+  panFrontPhotoUrl: string | null
+  panBackPhotoUrl: string | null
+  vehicleFrontPhotoUrl: string | null
+  vehicleBackPhotoUrl: string | null
+  drivingLicenseUrl: string | null
+}): { canGoOnline: boolean; blockers: string[] } {
+  const blockers = [...kycDocumentBlockers(w)]
+  if (!w.onboardingFeePaidAt) blockers.push('onboarding_fee_pending')
+  if (!w.trainingCompletedAt) blockers.push('training_videos_pending')
+  if (!w.isVerified) blockers.push('admin_document_review_pending')
+  return { canGoOnline: blockers.length === 0, blockers }
+}
+
+export async function markSelfReportedOnboardingFee(workerId: string) {
+  if (process.env.WORKER_SELF_REPORT_ONBOARDING_FEE !== '1') {
+    throw new HttpError(
+      403,
+      'Onboarding fee is recorded by payment / ops. Set WORKER_SELF_REPORT_ONBOARDING_FEE=1 only for internal demos.'
+    )
+  }
+  return prisma.worker.update({
+    where: { id: workerId },
+    data: { onboardingFeePaidAt: new Date() },
+  })
+}
+
+export async function completeWorkerTraining(workerId: string, watchedIds: string[]) {
+  const required = new Set(WORKER_TRAINING_VIDEO_IDS)
+  const got = new Set(watchedIds)
+  for (const id of required) {
+    if (!got.has(id)) {
+      throw new HttpError(400, `Missing training acknowledgement: ${id}`)
+    }
+  }
+  const w = await prisma.worker.findUniqueOrThrow({ where: { id: workerId } })
+  const doc = kycDocumentBlockers(w)
+  if (doc.length) {
+    throw new HttpError(400, `Upload all KYC photos first: ${doc.join(', ')}`)
+  }
+  if (!w.onboardingFeePaidAt) {
+    throw new HttpError(400, 'Onboarding fee must be recorded before training completion')
+  }
+  return prisma.worker.update({
+    where: { id: workerId },
+    data: { trainingCompletedAt: new Date() },
+  })
+}
+
 export async function getWorkerProfile(workerId: string) {
   const worker = await prisma.worker.findUnique({
     where: { id: workerId },
@@ -228,6 +332,7 @@ export async function getWorkerProfile(workerId: string) {
     rating: 4.9,
     todayEarnings: (todayAgg._sum.amountCents ?? 0) / 100,
     monthEarnings: (monthAgg._sum.amountCents ?? 0) / 100,
+    ...workerGigEligibility(worker),
   }
 }
 
@@ -240,11 +345,13 @@ export async function updateWorkerProfile(
     pincode?: string
     vehicleNumber?: string
     vehicleType?: string
+    vehicleFuelType?: string
     upiId?: string
     aadhaarNumber?: string
     drivingLicenseNo?: string
     bankAccount?: string
     bankIfsc?: string
+    panNumber?: string
   }
 ) {
   return prisma.worker.update({
@@ -256,11 +363,13 @@ export async function updateWorkerProfile(
       pincode: input.pincode?.trim(),
       vehicleNumber: input.vehicleNumber?.trim().toUpperCase(),
       vehicleType: input.vehicleType?.trim(),
+      vehicleFuelType: input.vehicleFuelType?.trim(),
       upiId: input.upiId?.trim(),
       aadhaarNumber: input.aadhaarNumber?.replace(/\D/g, ''),
       drivingLicenseNo: input.drivingLicenseNo?.trim(),
       bankAccount: input.bankAccount?.trim(),
       bankIfsc: input.bankIfsc?.trim().toUpperCase(),
+      panNumber: input.panNumber?.replace(/\s/g, '').toUpperCase(),
     },
   })
 }
@@ -271,6 +380,17 @@ export async function setWorkerOnlineStatus(input: {
   lat?: number
   lng?: number
 }) {
+  if (input.isOnline && process.env.WORKER_SKIP_ONBOARDING_GATE !== '1') {
+    const cur = await prisma.worker.findUnique({ where: { id: input.workerId } })
+    if (!cur) throw new HttpError(404, 'Worker not found')
+    const { canGoOnline, blockers } = workerGigEligibility(cur)
+    if (!canGoOnline) {
+      throw new HttpError(
+        403,
+        `Online gig blocked until onboarding is complete: ${blockers.join(', ')}`
+      )
+    }
+  }
   const w = await prisma.worker.update({
     where: { id: input.workerId },
     data: {

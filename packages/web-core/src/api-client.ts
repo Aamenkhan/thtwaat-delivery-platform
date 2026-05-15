@@ -95,10 +95,18 @@ async function parseBody(res: Response): Promise<unknown> {
 
 export async function refreshSession(): Promise<boolean> {
   const base = getApiBaseUrl()
+  const tokens = readTokens()
+  if (!tokens?.refreshToken) {
+    clearTokens()
+    writeUser(null)
+    return false
+  }
+
   const res = await fetch(`${base}/v1/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    credentials: 'include'
+    credentials: 'include',
+    body: JSON.stringify({ refreshToken: tokens.refreshToken }),
   })
   const body = (await parseBody(res)) as {
     ok?: boolean
@@ -113,14 +121,14 @@ export async function refreshSession(): Promise<boolean> {
     writeUser(null)
     return false
   }
-  
+
   if (body.data?.accessToken && body.data?.refreshToken) {
     writeTokens({
       accessToken: body.data.accessToken,
-      refreshToken: body.data.refreshToken
+      refreshToken: body.data.refreshToken,
     })
   }
-  
+
   if (body.data?.user) writeUser(body.data.user as StoredUser)
   return true
 }
@@ -174,7 +182,24 @@ export async function apiFetch<T>(
   if (res.status === 401 && !anonymous) {
     const refreshed = await refreshSession()
     if (refreshed) {
-      res = await fetch(`${base}${path}`, init)
+      const headers2 = new Headers(hdrs)
+      const tokens2 = readTokens()
+      if (tokens2?.accessToken) {
+        headers2.set('Authorization', `Bearer ${tokens2.accessToken}`)
+      }
+      if (isJson && !headers2.has('Content-Type')) {
+        headers2.set('Content-Type', 'application/json')
+      }
+      const init2: RequestInit = {
+        ...rest,
+        headers: headers2,
+        credentials: 'include',
+        body:
+          rawBody !== undefined ? rawBody
+          : isJson ? JSON.stringify(body)
+          : (body as BodyInit | undefined),
+      }
+      res = await fetch(`${base}${path}`, init2)
     }
   }
 

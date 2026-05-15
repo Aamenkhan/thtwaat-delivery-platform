@@ -84,6 +84,7 @@ export function SellerShell({ children }: { children: ReactNode }) {
       },
       { id: 'wallet', label: 'Wallet & payouts', group: 'Navigate', onSelect: () => router.push('/dashboard/wallet') },
       { id: 'plans', label: 'Subscription plans', group: 'Navigate', onSelect: () => router.push('/dashboard/plans') },
+      { id: 'account', label: 'Account', group: 'Navigate', onSelect: () => router.push('/dashboard/account') },
     ],
     [router]
   )
@@ -104,6 +105,7 @@ export function SellerShell({ children }: { children: ReactNode }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuItem onSelect={() => setOpen(true)}>Command palette ⌘K</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => router.push('/dashboard/account')}>Account</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => void logout()}>
           <LogOut className="mr-2 size-4" />

@@ -37,7 +37,7 @@ export function WorkerShell({ children }: { children: ReactNode }) {
     const u = readUser()?.email
     const id = readWorkerId()
     setLabel(u || (id ? `Worker ${id.slice(0, 6)}…` : 'Worker'))
-  }, [])
+  }, [pathname])
 
   async function logout() {
     clearWorkerSession()

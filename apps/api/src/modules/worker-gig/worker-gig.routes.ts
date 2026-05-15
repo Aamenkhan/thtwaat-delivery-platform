@@ -1,7 +1,9 @@
+import { Role } from '@prisma/client'
 import { Router, type RequestHandler } from 'express'
 import formidable from 'formidable'
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
+import { requireAuth, requireRole } from '../../middleware/auth.js'
 import { lookupIndiaPostalPincode } from '../../lib/india-postal-pincode.js'
 import { HttpError } from '../../lib/http-error.js'
 import { prisma } from '../../lib/prisma.js'
@@ -46,11 +48,13 @@ const profilePutBody = z.object({
   pincode: z.string().optional(),
   vehicleNumber: z.string().optional(),
   vehicleType: z.string().optional(),
+  vehicleFuelType: z.string().optional(),
   upiId: z.string().optional(),
   aadhaarNumber: z.string().optional(),
   drivingLicenseNo: z.string().optional(),
   bankAccount: z.string().optional(),
   bankIfsc: z.string().optional(),
+  panNumber: z.string().optional(),
 })
 
 const statusBody = z.object({
@@ -148,6 +152,13 @@ r.post('/workers/login/verify', validateBody(loginVerifyBody), (req, res, next) 
   })()
 })
 
+r.post(
+  '/workers/session-from-user',
+  requireAuth,
+  requireRole(Role.WORKER, Role.DELIVERY_WORKER),
+  ok(async (req) => svc.issueWorkerSessionForUserId(req.auth!.userId))
+)
+
 r.get('/geo/pincode/:pin', (req, res, next) => {
   void (async () => {
     try {
@@ -197,8 +208,8 @@ r.post(
       const type = String(fields.type?.[0] ?? '')
         .toLowerCase()
         .trim()
-      if (type !== 'profile' && type !== 'aadhaar' && type !== 'license') {
-        throw new HttpError(400, 'form field type must be profile | aadhaar | license')
+      if (type !== 'profile' && type !== 'aadhaar' && type !== 'license' && type !== 'aadhaar_back' && type !== 'pan_front' && type !== 'pan_back' && type !== 'vehicle_front' && type !== 'vehicle_back') {
+        throw new HttpError(400, 'form field type must be profile | aadhaar | aadhaar_back | pan_front | pan_back | vehicle_front | vehicle_back | license')
       }
 
       const filepath = (file as { filepath: string }).filepath
@@ -207,7 +218,7 @@ r.post(
         (file as { mimetype?: string | null }).mimetype || 'application/octet-stream'
       const photoUrl = await uploadWorkerAsset({
         workerId: req.params.id!,
-        type,
+        type: type as Parameters<typeof uploadWorkerAsset>[0]['type'],
         filename:
           (file as { originalFilename?: string | null }).originalFilename ||
           'upload.jpg',
@@ -219,13 +230,44 @@ r.post(
           ? { photoUrl }
           : type === 'aadhaar'
             ? { aadhaarPhotoUrl: photoUrl }
-            : { drivingLicenseUrl: photoUrl }
+            : type === 'aadhaar_back'
+              ? { aadhaarBackPhotoUrl: photoUrl }
+              : type === 'pan_front'
+                ? { panFrontPhotoUrl: photoUrl }
+                : type === 'pan_back'
+                  ? { panBackPhotoUrl: photoUrl }
+                  : type === 'vehicle_front'
+                    ? { vehicleFrontPhotoUrl: photoUrl }
+                    : type === 'vehicle_back'
+                      ? { vehicleBackPhotoUrl: photoUrl }
+                      : { drivingLicenseUrl: photoUrl }
       await prisma.worker.update({ where: { id: req.params.id! }, data: update })
       res.json({ ok: true, data: { photoUrl } })
     } catch (e) {
       next(e)
     }
   }
+)
+
+const trainingCompleteBody = z.object({
+  watchedIds: z.array(z.string()).min(1),
+})
+
+r.post(
+  '/workers/:id/onboarding/fee-self-report',
+  requireWorkerJwt,
+  requireSelfWorkerId('id'),
+  ok(async (req) => svc.markSelfReportedOnboardingFee(req.params.id!))
+)
+
+r.post(
+  '/workers/:id/onboarding/training-complete',
+  requireWorkerJwt,
+  requireSelfWorkerId('id'),
+  validateBody(trainingCompleteBody),
+  ok(async (req) =>
+    svc.completeWorkerTraining(req.params.id!, (req.body as z.infer<typeof trainingCompleteBody>).watchedIds)
+  )
 )
 
 r.patch(

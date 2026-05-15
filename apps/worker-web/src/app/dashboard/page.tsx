@@ -1,6 +1,6 @@
 'use client'
 
-import { Button } from '@repo/ui'
+import { Button, Skeleton } from '@repo/ui'
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { workerFetch } from '../../lib/worker-api'
@@ -14,6 +14,8 @@ type Profile = {
   isOnline: boolean
   todayEarnings: number
   homeHubId: string | null
+  canGoOnline?: boolean
+  blockers?: string[]
 }
 
 type OrderRow = {
@@ -30,7 +32,8 @@ type OrderRow = {
 }
 
 export default function WorkerDashboard() {
-  const id = readWorkerId()
+  /** `readWorkerId()` is null on SSR — avoid false "Login करें" until client has read localStorage. */
+  const [id, setId] = useState<string | null | undefined>(undefined)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [active, setActive] = useState<OrderRow[]>([])
   const [done, setDone] = useState<OrderRow[]>([])
@@ -38,6 +41,10 @@ export default function WorkerDashboard() {
   const [online, setOnline] = useState(false)
   const watchRef = useRef<number | null>(null)
   const locTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    setId(readWorkerId())
+  }, [])
 
   useEffect(() => {
     if (!id) return
@@ -151,6 +158,16 @@ export default function WorkerDashboard() {
     return profile.displayName
   }, [profile])
 
+  if (id === undefined) {
+    return (
+      <div className="space-y-3 p-6">
+        <Skeleton className="h-10 w-full rounded-xl" />
+        <Skeleton className="h-14 w-full rounded-2xl" />
+        <Skeleton className="h-24 w-full rounded-xl" />
+      </div>
+    )
+  }
+
   if (!id) {
     return <p className="p-6 text-sm">Login करें।</p>
   }
@@ -181,6 +198,19 @@ export default function WorkerDashboard() {
       </button>
 
       {err ? <p className="text-sm text-destructive">{err}</p> : null}
+
+      {profile && profile.canGoOnline === false && profile.blockers?.length ? (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100">
+          <p className="font-semibold">Online gig अभी बंद</p>
+          <p className="mt-1 text-muted-foreground">
+            {profile.blockers.join(', ')} — register / profile से KYC पूरा करें, ₹999 fee, training, फिर admin
+            verify का इंतज़ार।
+          </p>
+          <Link href="/register" className="mt-2 inline-block font-medium text-primary underline">
+            Onboarding जारी रखें
+          </Link>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 text-center">
         <div className="rounded-xl border p-3">

@@ -14,7 +14,7 @@
     "db:seed": "dotenv -e .env -- pnpm --filter @repo/db run seed",
     "db:studio": "dotenv -e .env -- pnpm --filter @repo/db exec prisma studio",
     "db:migrate:init": "dotenv -e .env -- pnpm --filter @repo/db exec prisma migrate dev --name init",
-    "db:migrate:deploy": "pnpm --filter @repo/db exec prisma migrate deploy",
+    "db:migrate:deploy": "dotenv -e .env -- pnpm --filter @repo/db exec prisma migrate deploy",
     "db:generate:api": "pnpm --filter @repo/api db:generate"
   },
   "devDependencies": {
